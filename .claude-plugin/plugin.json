@@ -1,0 +1,80 @@
+{
+  "name": "jev-cc-model-router",
+  "version": "0.1.0",
+  "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
+  "author": { "name": "KevinYu1580" },
+  "license": "MIT",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "TypeSafe API key",
+      "description": "Key for Jev (console.typesafe.ai). Falls back to the TYPESAFE_API_KEY environment variable. Without a key the router does nothing.",
+      "sensitive": true
+    },
+    "default_mode": {
+      "type": "string",
+      "title": "Default mode",
+      "description": "shadow: judge and show, never rewrite. auto: rewrite model and effort. off: do nothing. /jcmr changes the current session only.",
+      "options": ["shadow", "auto", "off"],
+      "default": "shadow"
+    },
+    "low_model": {
+      "type": "string",
+      "title": "Low tier model",
+      "description": "Alias (sonnet, opus, haiku, fable) or a full model id. Empty disables the tier.",
+      "default": "sonnet"
+    },
+    "balanced_model": {
+      "type": "string",
+      "title": "Balanced tier model",
+      "description": "Alias (sonnet, opus, haiku, fable) or a full model id. Empty disables the tier.",
+      "default": "sonnet"
+    },
+    "strong_model": {
+      "type": "string",
+      "title": "Strong tier model",
+      "description": "Alias (sonnet, opus, haiku, fable) or a full model id. Empty disables the tier.",
+      "default": "opus"
+    },
+    "long_model": {
+      "type": "string",
+      "title": "Long tier model",
+      "description": "For multi-hour autonomous work. Empty (the default) disables the tier; fable enables it."
+    },
+    "tier_min_probability": {
+      "type": "number",
+      "title": "Minimum tier probability",
+      "description": "On a session's first turn, the model changes only when Jev gives its pick at least this probability.",
+      "min": 0,
+      "max": 1,
+      "default": 0.6
+    },
+    "signal_threshold": {
+      "type": "number",
+      "title": "Signal threshold",
+      "description": "Probability above which a continuation, a complaint about the last attempt, or a high-stakes task counts.",
+      "min": 0,
+      "max": 1,
+      "default": 0.7
+    },
+    "min_effort": {
+      "type": "string",
+      "title": "Minimum effort",
+      "description": "The lowest effort the router will set.",
+      "options": ["low", "medium", "high", "xhigh", "max"],
+      "default": "low"
+    },
+    "jev_model": {
+      "type": "string",
+      "title": "Jev model",
+      "description": "jev-latest follows TypeSafe's newest model; a version such as jev-1.13.0 pins one.",
+      "default": "jev-latest"
+    },
+    "send_assistant_tail": {
+      "type": "boolean",
+      "title": "Send the end of Claude's last reply",
+      "description": "Also send the last ~1000 characters of Claude's previous reply to Jev, so a short answer such as 'ok' is judged against what it answers.",
+      "default": false
+    }
+  }
+}
