@@ -2,7 +2,9 @@
   "name": "jev-cc-model-router",
   "version": "0.1.0",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
-  "author": { "name": "KevinYu1580" },
+  "author": {
+    "name": "KevinYu1580"
+  },
   "license": "MIT",
   "userConfig": {
     "api_key": {
@@ -15,36 +17,40 @@
       "type": "string",
       "title": "Default mode",
       "description": "shadow: judge and show, never rewrite. auto: rewrite model and effort. off: do nothing. /jcmr changes the current session only.",
-      "options": ["shadow", "auto", "off"],
+      "options": [
+        "shadow",
+        "auto",
+        "off"
+      ],
       "default": "shadow"
     },
     "low_model": {
       "type": "string",
       "title": "Low tier model",
-      "description": "Alias (sonnet, opus, haiku, fable) or a full model id. Empty disables the tier.",
+      "description": "Default: sonnet. Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "sonnet"
     },
     "balanced_model": {
       "type": "string",
       "title": "Balanced tier model",
-      "description": "Alias (sonnet, opus, haiku, fable) or a full model id. Empty disables the tier.",
+      "description": "Default: sonnet. Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "sonnet"
     },
     "strong_model": {
       "type": "string",
       "title": "Strong tier model",
-      "description": "Alias (sonnet, opus, haiku, fable) or a full model id. Empty disables the tier.",
+      "description": "Default: opus. Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "opus"
     },
     "long_model": {
       "type": "string",
       "title": "Long tier model",
-      "description": "For multi-hour autonomous work. Empty (the default) disables the tier; fable enables it."
+      "description": "For multi-hour autonomous work. Off by default; type fable (or another alias or a full model id) to enable it."
     },
     "tier_min_probability": {
       "type": "number",
       "title": "Minimum tier probability",
-      "description": "On a session's first turn, the model changes only when Jev gives its pick at least this probability.",
+      "description": "Default: 0.6. On a session's first turn, the model changes only when Jev gives its pick at least this probability.",
       "min": 0,
       "max": 1,
       "default": 0.6
@@ -52,7 +58,7 @@
     "signal_threshold": {
       "type": "number",
       "title": "Signal threshold",
-      "description": "Probability above which a continuation, a complaint about the last attempt, or a high-stakes task counts.",
+      "description": "Default: 0.7. Probability above which a continuation, a complaint about the last attempt, or a high-stakes task counts.",
       "min": 0,
       "max": 1,
       "default": 0.7
@@ -61,13 +67,19 @@
       "type": "string",
       "title": "Minimum effort",
       "description": "The lowest effort the router will set.",
-      "options": ["low", "medium", "high", "xhigh", "max"],
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
       "default": "low"
     },
     "jev_model": {
       "type": "string",
       "title": "Jev model",
-      "description": "jev-latest follows TypeSafe's newest model; a version such as jev-1.13.0 pins one.",
+      "description": "Default: jev-latest, which follows TypeSafe's newest model; a version such as jev-1.13.0 pins one.",
       "default": "jev-latest"
     },
     "send_assistant_tail": {

@@ -76,12 +76,14 @@ describe('resolveModel', () => {
     expect(resolveModel('sonnet', { firstParty: false, catalog, version: '2.1.286' })).toBeUndefined()
   })
 
-  test('a full id is used as written, and an empty value disables the tier', () => {
+  test('a full id is used as written, and off or an empty value disables the tier', () => {
     expect(resolveModel('claude-opus-4-8', { firstParty: false, version: '2.1.286' })).toEqual({
       id: 'claude-opus-4-8',
       source: 'config',
     })
     expect(resolveModel('', firstParty)).toBeUndefined()
     expect(resolveModel(undefined, firstParty)).toBeUndefined()
+    expect(resolveModel('off', firstParty)).toBeUndefined()
+    expect(resolveModel(' OFF ', firstParty)).toBeUndefined()
   })
 })

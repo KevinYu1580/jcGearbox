@@ -61,13 +61,14 @@ export function catalogModel(catalog: unknown, family: Family, version: string):
 }
 
 // An alias resolves only on a first-party login, whose ids the catalog and
-// the table hold; anything else is a full id, used as written.
+// the table hold; anything else is a full id, used as written. "off" (or an
+// empty value) disables the tier: the config menu cannot store an empty one.
 export function resolveModel(
   value: string | undefined,
   ctx: { firstParty: boolean; catalog?: unknown; version: string },
 ): Resolved | undefined {
   const name = value?.trim()
-  if (!name) return undefined
+  if (!name || name.toLowerCase() === 'off') return undefined
   const family = FAMILIES.find(f => f === name.toLowerCase())
   if (!family) return { id: name, source: 'config' }
   if (!ctx.firstParty) return undefined

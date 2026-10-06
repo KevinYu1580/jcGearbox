@@ -273,4 +273,11 @@ describe('tiers that all resolve to one model', () => {
     expect(w.asked[0].questions.tier).toBeUndefined()
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
   })
+
+  test('off turns a tier off', { options: { default_mode: 'auto', low_model: 'off', balanced_model: 'OFF' } }, async ($, on) => {
+    const w = world(on, { reply: answering(STRONG) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.asked[0].questions.tier).toBeUndefined()
+  })
 })
