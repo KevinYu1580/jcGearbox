@@ -2,17 +2,14 @@
 
 English · [繁體中文](README.zh-TW.md)
 
-A Claude Code mod (a plugin of function hooks) that asks [TypeSafe's Jev](https://typesafe.ai) how hard your task is, then:
+Claude Code leaves the model and the effort to you. This mod sets them from how hard the task looks, as judged by [TypeSafe's Jev](https://typesafe.ai). The first prompt of a session picks the model: Sonnet for everyday work, Opus for hard work. Every prompt you type, the first one included, picks the effort: lower for a quick question, higher when you say the last attempt failed or the task can break something.
 
-- **picks the model once per session**: Sonnet for everyday work, Opus when the first prompt of a session looks hard, without you switching by hand;
-- **picks the effort every turn**: lower for easy turns so replies come back faster, higher when you say the last attempt failed or the task is risky.
-
-It starts in **shadow mode**: it judges every turn and shows what it would do in the status line, but changes nothing until you turn on `auto`. Watch it for a while and decide whether Jev's judgement is good enough for you (see [Limitations](#limitations)).
+A mod is a Claude Code plugin made of function hooks. This one starts in shadow mode: it judges every prompt and shows its pick in the status line, but sends your requests unchanged. Turn on `auto` once `/jcmr log` has shown you enough of its picks to trust them, because the evidence that Jev judges difficulty well is thin (see [Limitations](#limitations)).
 
 ## Requirements
 
-- Claude Code **2.1.286 or newer**. The mod API is early access and may change without notice in any release.
-- A TypeSafe API key ([console.typesafe.ai](https://console.typesafe.ai)).
+- Claude Code 2.1.286 or newer. Mods are an early-access API, so any Claude Code release can break this one.
+- A TypeSafe API key, from [console.typesafe.ai](https://console.typesafe.ai).
 
 ## Install
 
@@ -21,119 +18,169 @@ It starts in **shadow mode**: it judges every turn and shows what it would do in
 /plugin install jev-cc-model-router@jev-cc-model-router
 ```
 
-Give it your key in the plugin's settings (`api_key`), or set the `TYPESAFE_API_KEY` environment variable. Without a key the mod does nothing.
+The repository is private for now, so these commands work only for GitHub accounts with access to it.
 
-## How it decides
+Put the key in the plugin's `api_key` setting (see [Settings](#settings)) or in the `TYPESAFE_API_KEY` environment variable. With neither, the mod does nothing and the status line says `jcmr: no API key`.
 
-### Model: once per session
+## Picking the model
 
-On the first prompt you type in a session, Jev is asked which tier the task needs:
+On the first prompt you type in a session, Jev is asked which tier the task needs. Each tier maps to a model:
 
-| Tier | Meant for | Default model |
+| Tier | For | Default model |
 |---|---|---|
 | `low` | Lookups, explanations, renames, formatting, running a command, one-line edits | `sonnet` |
 | `balanced` | A typical feature or bug fix in one module, writing tests, a single-file refactor | `sonnet` |
 | `strong` | Cross-module design, hard debugging (concurrency, performance, memory), architecture, security, unclear requirements | `opus` |
 | `long` | Hours of autonomous work, repo-wide migrations or audits | off (set `fable` to enable) |
 
-Tiers that map to the same model add their probabilities together. The model changes only when the winning model gets at least `tier_min_probability` (0.6); otherwise the session keeps the model you picked. A tie goes to the stronger model.
+Tiers on the same model add their probabilities together, so with the defaults the question is really Sonnet or Opus. If the tiers you've set map to fewer than two different models, there is nothing to choose and Jev isn't asked about the tier. The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise the session stays on the model you picked. A tie goes to the stronger model.
 
-After the first prompt the model **never changes on its own**, so the mod never throws the prompt cache away mid-session. A new session or `/clear` decides again; `--resume` and compaction keep the decision. (Compaction itself still runs on the model you picked: see [Limitations](#limitations).)
+That choice holds for the rest of the session, because switching models halfway would throw away the prompt cache. The mod switches on its own only when the API didn't answer with the model it asked for (see [Status line](#status-line)); your own `/jcmr pin` and `/jcmr auto` switch it too. A new session, `/clear` or a fork decides again; `--resume` and compaction keep the choice, although the compaction request itself runs on the model you picked (see [Limitations](#limitations)).
 
-### Effort: every prompt you type
+### How the model changes in a session
 
-1. Start from Jev's effort score (`low`, `medium`, `high`, `xhigh`, `max`). If the prompt just continues the previous task ("ok", "go ahead", a short answer), keep the previous effort instead.
-2. If you say the last attempt was wrong or failed, go one level up (at most `max`).
-3. If a mistake could do hard-to-reverse damage (production, data deletion, migrations, auth, money, force-push), use at least `xhigh`.
+Say your model in Claude Code is Sonnet. The model is decided once, at the first prompt (diagram 1). After that, only the events in diagram 2 change it.
+
+```mermaid
+flowchart TD
+    P["First prompt of a session<br/>(your model: Sonnet)"] --> Q{"Does Jev give Opus<br/>0.6 or more?"}
+    Q -->|"Yes"| O["The session uses<br/>Opus from here on"]
+    Q -->|"No, or Jev<br/>errors / times out"| S["The session stays<br/>on Sonnet from here on"]
+```
+
+```mermaid
+flowchart LR
+    C["After the first prompt,<br/>only these change<br/>the model"]
+    C -->|"/jcmr pin X"| X["Switch to X"]
+    C -->|"/model to another model"| U["Switch to that model;<br/>the mod stops switching"]
+    C -->|"/jcmr auto"| A["Pin and /model cleared,<br/>back to the first<br/>prompt's pick"]
+    C -->|"API doesn't answer as Opus,<br/>or doesn't answer at all"| S["Back to Sonnet,<br/>automatically"]
+```
+
+- The diagrams show `auto` mode. In shadow mode the same decision is made but only shown in the status line, and requests keep your model. Running `/jcmr auto` mid-session applies the shown model from the next request.
+- If your model is Opus, it works the other way round: the session moves to Sonnet only if Sonnet wins with 0.6 or more.
+- If you interrupt while Jev is answering the first prompt, nothing is decided and your next prompt counts as the first. If Jev errors or takes more than 1.5 s, there is no retry.
+- "Doesn't answer at all" means a request got no response and the turn ended in an error. After that, or after the API answers as a different model, the mod stops requesting Opus and `/jcmr auto` returns to Sonnet. Picking Sonnet again in `/model` isn't detected; use `/jcmr pin sonnet` to go back.
+
+## Picking the effort
+
+The effort for each prompt you type is worked out in this order:
+
+1. Start from Jev's effort score, mapped to `low`, `medium`, `high`, `xhigh` or `max`. If the prompt only continues the last task ("ok", "go ahead", a short answer), keep the last effort instead.
+2. If you say the last attempt was wrong or failed, go up one level, to `max` at most.
+3. If a mistake could do damage that is hard to undo (production, deleting data, migrations, auth, money, force-push), use at least `xhigh`.
 4. Never go below `min_effort`.
 
-A signal counts only when Jev's probability is above `signal_threshold` (0.7). When you complain and the effort is already `max` on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`.
+Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability, and each counts only above 0.7 (`signal_threshold`). If you say the last attempt failed and it already ran at `max` on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`.
 
-Background-task notifications, scheduled prompts and messages from other sessions are never sent to Jev; those turns keep the session's current model and effort. Subagents are never touched.
+Prompts you didn't type, such as background-task notifications, scheduled prompts and messages from other sessions, never go to Jev and keep the current model and effort. So does a prompt that another plugin rewrote before its turn started. Subagents are left alone.
 
-### When Jev fails
+## If Jev fails
 
-Any Jev error or a reply slower than 1.5 seconds makes no new decision, and the status line says why (`Jev HTTP 401`, `Jev timeout`). On the session's first prompt the request then goes out as it would without the mod, and the session keeps your model for good; on later prompts the session's model and the previous effort carry on.
+When Jev returns an error or takes more than 1.5 seconds, the mod makes no new decision and the status line says why (`Jev HTTP 401`, `Jev timeout`). On a session's first prompt the request goes out untouched and the session stays on your model from then on. On any later prompt, the session's model and the last effort stay as they were.
 
-## Your choices win
+## Overriding it
 
-| You do | Effect |
+| You | The mod |
 |---|---|
-| `/jcmr pin <alias or full id>` | This session uses that model (in `auto` mode) |
-| Switch model with `/model` or the picker after the first prompt | The mod stops changing the model for this session and drops any pin |
-| Change the effort with `/effort` or the picker after the first prompt | The mod stops changing the effort for this session |
-| `/jcmr auto` | Back to `auto`, and every pin above is cleared. In a session that started in shadow, the model the status line showed takes effect on the next request (one prompt-cache rewrite) |
+| `/jcmr pin <alias or full id>` | Uses that model for this session (in `auto`) |
+| Switch model with `/model` or the picker, after the first prompt | Stops changing the model for this session and drops any pin |
+| Change the effort with `/effort` or the picker, after the first prompt, without also switching model | Stops changing the effort for this session |
+| `/jcmr auto` | Drops all of the above. In a session that started in shadow, the model the status line showed applies from the next request, which rewrites the prompt cache once |
 
-An effort already set when the session starts is taken as the starting point, not as your choice: to keep it, set it again after the first prompt, or use `/jcmr off`.
+Also:
 
-A slash command that sets its own effort for its turn (a skill's `effort:` frontmatter, `/code-review max`) keeps it for that turn and pins nothing.
-
-To go back to the model you started the session with after the mod picked another, use `/jcmr pin <model>`: choosing the same model again in `/model` or the picker is no switch as far as Claude Code is concerned, so the mod never hears of it.
+- The mod only counts an effort change made after the session's first prompt, and only to a level different from the last prompt's. To keep an effort you set before that, use `/jcmr off`.
+- A slash command that carries its own effort (a skill's `effort:` frontmatter, `/code-review max`) keeps it for that turn and pins nothing. If that effort happens to equal the last prompt's, the mod can't tell and uses its own.
+- Picking the session's original model again in `/model` is not a switch as far as Claude Code is concerned, so no switch event fires and the mod keeps its own pick. Use `/jcmr pin <model>` to go back.
 
 ## Commands
 
 | Command | Does |
 |---|---|
 | `/jcmr` | Shows the mode, the model and effort state, and Jev's scores for the last prompt |
-| `/jcmr auto` / `shadow` / `off` | Sets the mode for **this session**. The default for new sessions is the `default_mode` setting |
-| `/jcmr pin <model>` | Pins a model for this session |
-| `/jcmr log [n]` | Lists the last `n` decisions (20 by default) across all sessions |
+| `/jcmr auto`, `/jcmr shadow`, `/jcmr off` | Sets the mode for this session only; new sessions start in `default_mode` |
+| `/jcmr pin <model>` | Pins a model for this session. Refuses an alias it can't resolve and a model the API already didn't serve in this session |
+| `/jcmr log [n]` | Lists the last `n` decisions (default 20) across all sessions |
 
 ## Status line
 
 ```
-jcmr ▸ opus-5-5·high                 auto
-jcmr(shadow) ▸ opus-5-5·high         shadow: what auto would do
+jcmr ▸ opus-5-5·high            auto
+jcmr(shadow) ▸ opus-5-5·high    shadow: what auto would do
+jcmr(shadow)                    after a start, /clear, /resume or /jcmr, until the next decision
 jcmr: no API key
 jcmr: needs Claude Code 2.1.286+
 ```
 
-Notes are appended when they apply: `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`. If the API answers with a different model than the one requested, or the request gets no response at all and the turn ends in an error, you see `jcmr: <model> was not used (<model> answered); not switching to it again` (`no response` in the brackets for the latter).
+In `auto` the short form is just `jcmr`; in `off` the line is empty. Notes follow when they apply: `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`.
+
+If the API answers as a different model than the one requested, the mod stops asking for that model and shows `jcmr: <model> was not used (<model> answered); not switching to it again`. It does the same, with `no response` in the brackets, when a request gets no response and the turn ends in an error.
 
 ## Settings
+
+Change them with `/plugin configure jev-cc-model-router@jev-cc-model-router` in Claude Code, or from a shell by piping a JSON object to `claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin`, then restart Claude Code. The values live in `~/.claude/settings.json`:
+
+```json
+{
+  "pluginConfigs": {
+    "jev-cc-model-router@jev-cc-model-router": {
+      "options": { "default_mode": "auto", "signal_threshold": 0.85 }
+    }
+  }
+}
+```
+
+`api_key` is the exception: it is a sensitive field, so Claude Code keeps it in its secure storage, not in this file. `TYPESAFE_API_KEY` can be set in your shell or in the `env` block of the same `settings.json`.
+
+In the `/plugin configure` menu, `default_mode` and `min_effort` are pickers. The model fields take typed text, because they also accept full model ids, and a blank field means the default in the table below.
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `api_key` | empty | TypeSafe key. Falls back to `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | Mode for new sessions: `shadow`, `auto` or `off` |
-| `low_model`, `balanced_model`, `strong_model` | `sonnet`, `sonnet`, `opus` | Alias (`haiku`, `sonnet`, `opus`, `fable`) or full model id. Empty disables the tier |
-| `long_model` | empty | Set `fable` to enable |
-| `tier_min_probability` | 0.6 | Minimum probability to change the session's model |
-| `signal_threshold` | 0.7 | Probability above which "continuation", "the last attempt failed" and "high stakes" count |
+| `low_model`, `balanced_model`, `strong_model` | `sonnet`, `sonnet`, `opus` | An alias (`sonnet`, `opus`, `haiku`, `fable`) or a full model id; `off` turns the tier off |
+| `long_model` | off | Set `fable` (or another alias or a full id) to turn the tier on |
+| `tier_min_probability` | 0.6 | Probability the winning model needs before the session's model changes |
+| `signal_threshold` | 0.7 | Probability above which a continuation, a failed attempt or a risky task counts; one threshold for all three |
 | `min_effort` | `low` | Lowest effort the mod sets |
-| `jev_model` | `jev-latest` | Set a version such as `jev-1.13.0` to pin one |
-| `send_assistant_tail` | off | Also send the last ~1000 characters of Claude's previous reply (see Privacy) |
+| `jev_model` | `jev-latest` | A version such as `jev-1.13.0` pins one |
+| `send_assistant_tail` | off | Also send the last ~1000 characters of Claude's previous reply (see [Privacy](#privacy)) |
 
 ### Model names
 
-A full model id is used as written. An alias is turned into the current model id from Claude Code's own model list (the cache under `~/.claude/cache/model-catalog/`), falling back to a built-in table (`built-in model table` in the status line).
+A full model id is used as written. An alias (`haiku`, `sonnet`, `opus`, `fable`) becomes the current id from Claude Code's own model list, cached under `~/.claude/cache/model-catalog/` (or under `$CLAUDE_CONFIG_DIR` when that is set). If the list can't be read or has no usable model for the alias, the mod uses a built-in table and the status line says `built-in model table`.
 
-Aliases work only when you log in to Claude Code with your Anthropic account. To check that, the mod calls Claude Code's `authorize()` and only looks at whether it answers at all: **the handle it returns is never used, and the mod never reads or sends your credentials.** On Bedrock, Vertex, Foundry or an LLM gateway, aliases resolve to nothing and those tiers are disabled: enter full model ids, or the mod only adjusts effort.
+Aliases only work when you're logged in to Claude Code with an Anthropic account. The mod checks this by calling Claude Code's `authorize()` and looking only at whether it answers. It never uses the handle that comes back, and it never reads or sends your credentials. On Bedrock, Vertex, Foundry or an LLM gateway, aliases resolve to nothing and their tiers are off. Give at least two tiers full ids of different models, or the mod will only adjust the effort.
 
-**Haiku as `low_model`:** Haiku does not take an effort setting and has a 200K context window. If the first prompt picks it, the whole session stays on Haiku unless you `/jcmr pin` another model.
+Setting `low_model` to Haiku has a cost. Haiku takes no effort setting and has a 200K context window, and if the first prompt picks it, the session stays on Haiku until you `/jcmr pin` another model or switch with `/model` to a model other than the session's original one.
 
 ## Privacy
 
-For each prompt you type, the mod sends TypeSafe only:
+For each prompt you type, TypeSafe receives only:
 
-- the prompt (up to ~6000 characters; longer ones keep the start and the end);
-- your previous prompt (up to ~1000 characters);
-- the session's current model and the previous effort;
+- the prompt, up to about 6000 characters (a longer one keeps its start and its end);
+- your previous prompt, up to about 1000 characters;
+- from the second prompt on, the session's current model and the last effort;
 - with `send_assistant_tail` on, the last ~1000 characters of Claude's previous reply.
 
-It never sends code, file contents or tool results, unless you pasted them into your prompt or turned on `send_assistant_tail`. Notifications, subagent reports and other turns you did not type are never sent.
+Code, file contents and tool results are not sent unless they are in your prompt or `send_assistant_tail` is on. The text of a prompt you didn't type is never sent; with `send_assistant_tail` on, though, the end of Claude's reply to it can be.
 
-According to TypeSafe, data is not used for training, but the retention period is not stated, the servers are in the US, and zero retention is offered on the enterprise plan only.
+TypeSafe says it does not train on this data, but not how long it keeps it.<!-- TODO: link TypeSafe's data policy --> Its servers are in the US, and zero retention is offered only on the enterprise plan.
 
-Locally (in Claude Code's plugin store), the mod keeps the first 200 characters of each prompt in its decision log, your last prompt (1000 characters) per session and, with `send_assistant_tail` on, the last ~1000 characters of Claude's last reply per session (kept until that session's record is pruned, even after you turn the option off). It keeps the latest 200 decisions and 200 sessions.
+On your machine, in Claude Code's plugin store, the mod keeps:
+
+- the first 200 characters of each prompt, in the decision log (the latest 200 decisions);
+- your last prompt in each session, up to 1000 characters (the latest 200 sessions);
+- with `send_assistant_tail` on, the end of Claude's last reply in each session. It stays until that session's record is pruned, even after you turn the option off.
 
 ## Limitations
 
-- The evidence that Jev can judge task difficulty is weak: the reference implementation's own evaluation reports an AUC of 0.570, with a confidence interval that includes chance, and there is no data for Chinese prompts. That is what shadow mode is for.
-- The mod API is early access; any Claude Code release may break it.
-- Compaction (automatic or `/compact`) and Claude Code's other side requests do not pass through the hook the mod rewrites, so they run on the model you picked, at its own effort. When the mod moved the session to another model, those requests cannot read the conversation's prompt cache, and your picked model writes the summary.
-- The model list cache is a Claude Code internal file whose format can change; the mod then falls back to its built-in table, which needs an update when new models ship.
-- Changing the effort has been observed not to invalidate the prompt cache only on Opus 5.5 with Claude Code 2.1.280 and later, on a small sample.
+- There is little evidence that Jev can judge task difficulty. The evaluation of a reference implementation reports an AUC of 0.570, with a confidence interval that includes chance,<!-- TODO: name and link the reference implementation --> and there is no data on Traditional Chinese prompts.
+- In a first desktop test (October 2026, `jev-latest`), Jev scored two short, unrelated questions as continuations, at 0.79 and 0.80, and both inherited the last prompt's effort, `high` and `xhigh`. Raising `signal_threshold` to 0.85 would have rejected both, but also a real continuation that scored 0.77, and it would make the failure and risk signals harder to trigger as well.
+- Compaction (automatic or `/compact`) and Claude Code's other side requests don't go through the hook the mod uses to rewrite requests. They run on the model you picked, at the session's own effort. When the mod has moved the session to another model, those requests can't read the conversation's prompt cache, and your picked model writes the summary.
+- The model list cache is an internal Claude Code file. If its format changes, the mod falls back to its built-in table, which needs updating when new models ship.
+- Only Opus 5.5 (Claude Code 2.1.280 and later) and Sonnet 5.5 (2.1.286) have been seen to keep the prompt cache when the effort changes, on a small sample.
 
 ## Development
 
@@ -143,9 +190,9 @@ claude plugin validate .
 claude plugin test .
 ```
 
-The first validates the manifest and the hooks module; the second, run on a folder with a `marketplace.json`, validates only the marketplace.
+Run both validations. On a folder that has a `marketplace.json`, `claude plugin validate .` checks only the marketplace; the first command is the one that checks the hooks module.
 
-To try a local checkout, load it with `claude --plugin-dir /path/to/jev-cc-model-router`, or name the folder in `CLAUDE_CODE_PLUGIN_DIRS` (plus `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` to reload on save) in the `env` block of `~/.claude/settings.json` for the desktop app. The design is in [docs/SPEC.md](docs/SPEC.md) (Traditional Chinese).
+To try a local checkout, start Claude Code with `claude --plugin-dir /path/to/jev-cc-model-router`. The desktop app takes no flags, so add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/settings.json` instead, with `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` to reload on save. A checkout loaded this way reads its options from `pluginConfigs["jev-cc-model-router"]` rather than the installed plugin's entry. The design notes are in [docs/SPEC.md](docs/SPEC.md), in Traditional Chinese.
 
 ## License
 
