@@ -76,11 +76,32 @@
       ],
       "default": "low"
     },
+    "max_effort": {
+      "type": "string",
+      "title": "Maximum effort",
+      "description": "Default: max. The highest effort the router will set. It applies last, so it wins over the minimum effort and over the high-stakes rule. An effort you set yourself is not capped.",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default": "max"
+    },
     "jev_model": {
       "type": "string",
       "title": "Jev model",
       "description": "Default: jev-latest, which follows TypeSafe's newest model; a version such as jev-1.13.0 pins one.",
       "default": "jev-latest"
+    },
+    "jev_timeout_seconds": {
+      "type": "number",
+      "title": "Jev timeout (seconds)",
+      "description": "Default: 3. How long the first request of each prompt you type waits for Jev before going ahead without its answer. 0.5 to 8; a hook may not run past 10 seconds.",
+      "min": 0.5,
+      "max": 8,
+      "default": 3
     },
     "send_assistant_tail": {
       "type": "boolean",

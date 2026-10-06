@@ -121,16 +121,28 @@ describe('failing open', () => {
     expect(w.status.at(-1)).toContain('Jev HTTP 401')
   })
 
-  test('a Jev that does not answer in time is not waited for', AUTO, async ($, on) => {
+  test('a Jev that does not answer in 3 seconds, the default, is not waited for', AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG, hang: true })
     await start($)
     const done = turn($, 'redesign the sync engine', 't1')
     await w.clock.settle()
-    await w.clock.advance(1499)
+    await w.clock.advance(2999)
     expect(w.steps).toHaveLength(0)
     await w.clock.advance(1)
     await done
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
+    expect(w.status.at(-1)).toContain('Jev timeout')
+  })
+
+  test('jev_timeout_seconds sets how long Jev is waited for', { options: { default_mode: 'auto', jev_timeout_seconds: 5 } }, async ($, on) => {
+    const w = world(on, { reply: STRONG, hang: true })
+    await start($)
+    const done = turn($, 'redesign the sync engine', 't1')
+    await w.clock.settle()
+    await w.clock.advance(4999)
+    expect(w.steps).toHaveLength(0)
+    await w.clock.advance(1)
+    await done
     expect(w.status.at(-1)).toContain('Jev timeout')
   })
 

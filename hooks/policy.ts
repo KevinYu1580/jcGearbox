@@ -27,21 +27,27 @@ function atLeast(effort: Effort, floor: Effort): Effort {
   return EFFORTS.indexOf(effort) >= EFFORTS.indexOf(floor) ? effort : floor
 }
 
+function atMost(effort: Effort, ceiling: Effort): Effort {
+  return EFFORTS.indexOf(effort) <= EFFORTS.indexOf(ceiling) ? effort : ceiling
+}
+
 function oneUp(effort: Effort): Effort {
   return EFFORTS[Math.min(EFFORTS.length - 1, EFFORTS.indexOf(effort) + 1)] ?? effort
 }
 
 // Start from the previous effort on a continuation, else from Jev's score;
 // then a complaint raises it a level and a high-stakes task lifts it to xhigh.
+// The floor applies next and the ceiling last, so the ceiling wins.
 export function decideEffort(input: {
   signals: Signals | undefined
   previous: Effort | undefined
   isFirstTurn: boolean
   threshold: number
   minEffort: Effort
+  maxEffort: Effort
 }): { effort: Effort | undefined; escalated: boolean } {
-  const { signals, previous, isFirstTurn, threshold, minEffort } = input
-  if (!signals) return { effort: isFirstTurn ? undefined : previous, escalated: false }
+  const { signals, previous, isFirstTurn, threshold, minEffort, maxEffort } = input
+  if (!signals) return { effort: isFirstTurn || !previous ? undefined : atMost(previous, maxEffort), escalated: false }
 
   const holds = (p: number | undefined) => p !== undefined && p > threshold
   const isContinuation = !isFirstTurn && holds(signals.continuation)
@@ -57,7 +63,7 @@ export function decideEffort(input: {
 
   if (escalated) effort = oneUp(effort)
   if (holds(signals.highStakes)) effort = atLeast(effort, 'xhigh')
-  return { effort: atLeast(effort, minEffort), escalated }
+  return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated }
 }
 
 // Tiers that resolve to the same model pool their probability; the model

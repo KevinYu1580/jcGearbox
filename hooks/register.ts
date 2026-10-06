@@ -4,11 +4,10 @@ import { JEV_URL, buildRequest, clip, parseAnswers } from './jev.ts'
 import type { JevRequest, JevResult } from './jev.ts'
 import { newestCatalogFile, resolveModel, surfaceOf, versionAtLeast } from './models.ts'
 import type { Resolved } from './models.ts'
-import { TIERS, decideEffort, pickModel } from './policy.ts'
+import { EFFORTS, TIERS, decideEffort, isEffort, pickModel } from './policy.ts'
 import type { Effort, Tier } from './policy.ts'
 
 const MIN_VERSION = '2.1.286'
-const JEV_TIMEOUT_MS = 1500
 const KEEP = 200
 const CONTEXT_CHARS = 1000
 // Prompts the person sent: typed, through the desktop app or an SDK host,
@@ -282,7 +281,7 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
       replyTail: opt.sendAssistantTail ? r.replyTail : undefined,
       previous: first ? undefined : { model: current(r) ?? model, effort: lastEffort(r) },
     })
-    asked = await askJev($, key, body, signal)
+    asked = await askJev($, key, body, signal, opt.jevTimeoutMs)
     if (signal.aborted) return { apply: false } // interrupted: nothing decided, the next prompt asks again
     r = (await record($))[1] // keep what /model or /jcmr changed while Jev answered
   }
@@ -311,6 +310,7 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
       isFirstTurn: first,
       threshold: opt.signalThreshold,
       minEffort: opt.minEffort,
+      maxEffort: opt.maxEffort,
     })
     escalated = decided.escalated
     if (first) {
@@ -348,7 +348,8 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   const notes: string[] = []
   if (r.pin || r.userModel) notes.push('model pinned')
   if (r.effortPinned) notes.push('effort pinned')
-  if (escalated && before === 'max' && !/opus|fable/.test(shown)) notes.push('try /jcmr pin opus')
+  const atCeiling = isEffort(before) && EFFORTS.indexOf(before) >= EFFORTS.indexOf(opt.maxEffort)
+  if (escalated && atCeiling && !/opus|fable/.test(shown)) notes.push('try /jcmr pin opus')
   if (Object.values(tiers).some(t => t?.source === 'builtin')) notes.push('built-in model table')
   if (asked?.error) notes.push(`Jev ${asked.error}`)
   const head = mode === 'auto' ? 'jcmr' : `jcmr(${mode})`
@@ -456,24 +457,27 @@ function readOptions(options: PluginOptions) {
     tierMinProbability: num('tier_min_probability'),
     signalThreshold: num('signal_threshold'),
     minEffort: (text('min_effort') ?? 'low') as Effort,
+    maxEffort: (text('max_effort') ?? 'max') as Effort,
     jevModel: text('jev_model') || 'jev-latest',
+    jevTimeoutMs: Math.round(num('jev_timeout_seconds') * 1000),
     sendAssistantTail: options.send_assistant_tail === true,
   }
 }
 
-// One Jev call that never rejects and never waits past JEV_TIMEOUT_MS.
+// One Jev call that never rejects and never waits past timeoutMs.
 async function askJev(
   $: EngineInterface,
   key: string,
   body: JevRequest,
   signal: AbortSignal,
+  timeoutMs: number,
 ): Promise<{ result?: JevResult; error?: string }> {
   const stop = new AbortController()
   const relay = () => stop.abort()
   signal.addEventListener('abort', relay)
   if (signal.aborted) stop.abort()
   try {
-    const timeout = $.clock.sleep(JEV_TIMEOUT_MS, { signal: stop.signal }).then(
+    const timeout = $.clock.sleep(timeoutMs, { signal: stop.signal }).then(
       () => 'timeout' as const,
       () => 'timeout' as const,
     )

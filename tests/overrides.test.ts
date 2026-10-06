@@ -197,6 +197,15 @@ describe('the try /jcmr pin opus note', () => {
     expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·max')
   })
 
+  test('with a lower max_effort, shows once a complaint finds the effort at that ceiling', { options: { default_mode: 'auto', max_effort: 'xhigh' } }, async ($, on) => {
+    const w = world(on, { reply: xhighThenComplaints(EASY) })
+    await start($)
+    await turn($, 'fix the flaky test', 't1')
+    await turn($, 'still failing', 't2')
+    expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
+    expect(w.status.at(-1)).toBe('jcmr ▸ sonnet-5-5·xhigh · try /jcmr pin opus')
+  })
+
   test("shows when the person's own effort is max", AUTO, async ($, on) => {
     const w = world(on, { reply: xhighThenComplaints(EASY) })
     await start($)
