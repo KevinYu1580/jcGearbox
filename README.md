@@ -59,25 +59,52 @@ flowchart LR
 
 - The diagrams show `auto` mode. In shadow mode the same decision is made but only shown in the status line, and requests keep your model. Running `/jcmr auto` mid-session applies the shown model from the next request.
 - If your model is Opus, it works the other way round: the session moves to Sonnet only if Sonnet wins with 0.6 or more.
-- If you interrupt while Jev is answering the first prompt, nothing is decided and your next prompt counts as the first. If Jev errors or takes more than 1.5 s, there is no retry.
+- If you interrupt while Jev is answering the first prompt, nothing is decided and your next prompt counts as the first. If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s by default), there is no retry.
 - "Doesn't answer at all" means a request got no response and the turn ended in an error. After that, or after the API answers as a different model, the mod stops requesting Opus and `/jcmr auto` returns to Sonnet. Picking Sonnet again in `/model` isn't detected; use `/jcmr pin sonnet` to go back.
 
 ## Picking the effort
 
 The effort for each prompt you type is worked out in this order:
 
-1. Start from Jev's effort score, mapped to `low`, `medium`, `high`, `xhigh` or `max`. If the prompt only continues the last task ("ok", "go ahead", a short answer), keep the last effort instead.
-2. If you say the last attempt was wrong or failed, go up one level, to `max` at most.
-3. If a mistake could do damage that is hard to undo (production, deleting data, migrations, auth, money, force-push), use at least `xhigh`.
-4. Never go below `min_effort`.
+```mermaid
+flowchart TD
+    P["You send a prompt"] --> C{"Only continuing<br/>the last task?"}
+    C -->|"Yes"| K["Keep the last effort"]
+    C -->|"No"| J["Use Jev's effort score<br/>(low to max)"]
+    K --> F{"Saying the last<br/>attempt failed?"}
+    J --> F
+    F -->|"Yes"| U["One level up"]
+    F -->|"No"| R{"Could a mistake do<br/>hard-to-undo damage?"}
+    U --> R
+    R -->|"Yes"| X["At least xhigh"]
+    R -->|"No"| M["Keep it between<br/>min_effort and max_effort"]
+    X --> M
+    M --> E(["This prompt's effort"])
+```
 
-Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability, and each counts only above 0.7 (`signal_threshold`). If you say the last attempt failed and it already ran at `max` on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`.
+In words:
+
+1. Start from Jev's effort score, mapped to `low`, `medium`, `high`, `xhigh` or `max`. If the prompt only continues the last task ("ok", "go ahead", a short answer), keep the last effort instead.
+2. If you say the last attempt was wrong or failed, go up one level.
+3. If a mistake could do damage that is hard to undo (production, deleting data, migrations, auth, money, force-push), use at least `xhigh`.
+4. Keep it between `min_effort` and `max_effort`. `max_effort` is applied last, so if the two conflict, or the risky rule asks for more than `max_effort`, `max_effort` wins.
+
+Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability, and each counts only above 0.7 (`signal_threshold`). If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
+
+Examples from real sessions (October 2026, prompts translated from Chinese):
+
+| Prompt | What Jev said | Effort |
+|---|---|---|
+| "Analyse plan() in hooks/register.ts for concurrency problems; don't change any files" | effort score 2.62 | `xhigh` |
+| "OK, go on" (right after the row above) | continuation 0.95 | keeps `xhigh` |
+| "No, you missed the turn.complete part, check again" | failed 0.97, effort score 0.81 (`medium`) | one level up: `high` |
+| "What are the risks of force-pushing main back to the first commit?" | risky 0.93, effort score 1.70 (`high`) | at least `xhigh` |
 
 Prompts you didn't type, such as background-task notifications, scheduled prompts and messages from other sessions, never go to Jev and keep the current model and effort. So does a prompt that another plugin rewrote before its turn started. Subagents are left alone.
 
 ## If Jev fails
 
-When Jev returns an error or takes more than 1.5 seconds, the mod makes no new decision and the status line says why (`Jev HTTP 401`, `Jev timeout`). On a session's first prompt the request goes out untouched and the session stays on your model from then on. On any later prompt, the session's model and the last effort stay as they were.
+When Jev returns an error or takes longer than `jev_timeout_seconds` (3 seconds by default), the mod makes no new decision and the status line says why (`Jev HTTP 401`, `Jev timeout`). On a session's first prompt the request goes out untouched and the session stays on your model from then on. On any later prompt, the session's model and the last effort stay as they were.
 
 ## Overriding it
 
@@ -133,7 +160,7 @@ Change them with `/plugin configure jev-cc-model-router@jev-cc-model-router` in 
 
 `api_key` is the exception: it is a sensitive field, so Claude Code keeps it in its secure storage, not in this file. `TYPESAFE_API_KEY` can be set in your shell or in the `env` block of the same `settings.json`.
 
-In the `/plugin configure` menu, `default_mode` and `min_effort` are pickers. The model fields take typed text, because they also accept full model ids, and a blank field means the default in the table below.
+In the `/plugin configure` menu, `default_mode`, `min_effort` and `max_effort` are pickers. The model fields take typed text, because they also accept full model ids, and a blank field means the default in the table below.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -144,7 +171,9 @@ In the `/plugin configure` menu, `default_mode` and `min_effort` are pickers. Th
 | `tier_min_probability` | 0.6 | Probability the winning model needs before the session's model changes |
 | `signal_threshold` | 0.7 | Probability above which a continuation, a failed attempt or a risky task counts; one threshold for all three |
 | `min_effort` | `low` | Lowest effort the mod sets |
+| `max_effort` | `max` | Highest effort the mod sets; wins over `min_effort` and the risky rule. An effort you set yourself is not capped |
 | `jev_model` | `jev-latest` | A version such as `jev-1.13.0` pins one |
+| `jev_timeout_seconds` | 3 | How long the first request of each prompt you type waits for Jev, from 0.5 to 8. A longer wait gives Jev more time to answer, but when Jev is slow every prompt starts that much later |
 | `send_assistant_tail` | off | Also send the last ~1000 characters of Claude's previous reply (see [Privacy](#privacy)) |
 
 ### Model names

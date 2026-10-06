@@ -59,25 +59,52 @@ flowchart LR
 
 - 圖畫的是 `auto` 模式。預設的 shadow 模式判斷方式相同，但結果只顯示在狀態列，請求仍用你選的 model。中途下 `/jcmr auto` 的話，狀態列顯示的 model 會從下一個請求開始生效。
 - 你選的是 Opus 時就反過來：Sonnet 勝出且機率 ≥ 0.6，才會換成 Sonnet。
-- Jev 還在回答第一個 prompt 時你按了中斷，這次不算，下一個 prompt 才算第一個。Jev 出錯或超過 1.5 秒則不重試。
+- Jev 還在回答第一個 prompt 時你按了中斷，這次不算，下一個 prompt 才算第一個。Jev 出錯或逾時（`jev_timeout_seconds`，預設 3 秒）則不重試。
 - 「請求沒回應」指請求沒有回應、該回合以錯誤結束。發生這種情況，或 API 用別的 model 回應之後，mod 就不再要求 Opus，`/jcmr auto` 也只會回到 Sonnet。在 `/model` 選回原本的 Sonnet 偵測不到，要回去請用 `/jcmr pin sonnet`。
 
 ## 怎麼選 effort
 
 每個你送出的 prompt，effort 依下面的順序決定：
 
-1. 從 Jev 的 effort 分數出發，對應到 `low`、`medium`、`high`、`xhigh` 或 `max`。如果只是接續上一件事（「好」、「繼續」、簡短回答），改用上一回合的 effort。
-2. 你說上次做錯或失敗了，就升一級，最高到 `max`。
-3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `xhigh`。
-4. 最後不低於 `min_effort`。
+```mermaid
+flowchart TD
+    P["你送出一個 prompt"] --> C{"只是接續<br/>上一件事？"}
+    C -->|"是"| K["沿用上一回合的 effort"]
+    C -->|"否"| J["用 Jev 的 effort 分數<br/>（low 到 max）"]
+    K --> F{"在說上次<br/>失敗了？"}
+    J --> F
+    F -->|"是"| U["升一級"]
+    F -->|"否"| R{"出錯會造成<br/>難以挽回的損害？"}
+    U --> R
+    R -->|"是"| X["至少 xhigh"]
+    R -->|"否"| M["限制在 min_effort<br/>和 max_effort 之間"]
+    X --> M
+    M --> E(["這個 prompt 的 effort"])
+```
 
-「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率，超過 0.7（`signal_threshold`）才算數。你說上次失敗、而那次已經用 `max`，且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。
+文字版：
+
+1. 從 Jev 的 effort 分數出發，對應到 `low`、`medium`、`high`、`xhigh` 或 `max`。如果只是接續上一件事（「好」、「繼續」、簡短回答），改用上一回合的 effort。
+2. 你說上次做錯或失敗了，就升一級。
+3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `xhigh`。
+4. 最後限制在 `min_effort` 和 `max_effort` 之間。`max_effort` 最後套用，所以兩者衝突，或「有風險」要求的等級超過 `max_effort` 時，以 `max_effort` 為準。
+
+「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率，超過 0.7（`signal_threshold`）才算數。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
+
+實際 session 的例子（2026 年 10 月）：
+
+| prompt | Jev 的判斷 | effort |
+|---|---|---|
+| 「分析 hooks/register.ts 的 plan() 有沒有並行問題，不要改任何檔案」 | effort 分數 2.62 | `xhigh` |
+| 「好，繼續」（緊接在上一列之後） | 接續 0.95 | 沿用 `xhigh` |
+| 「不對，你漏看了 turn.complete 那段，重新檢查一次」 | 上次失敗 0.97，effort 分數 0.81（`medium`） | 升一級：`high` |
+| 「如果要把 main 分支 force-push 回第一個 commit，風險是什麼？」 | 有風險 0.93，effort 分數 1.70（`high`） | 至少 `xhigh` |
 
 不是你打的 prompt，例如背景任務通知、排程 prompt、其他 session 傳來的訊息，不會送給 Jev，沿用目前的 model 和 effort。你的 prompt 如果在回合開始前被其他 plugin 改寫，也比照處理。subagent 的 model 和 effort 一律不動。
 
 ## Jev 出錯時
 
-Jev 回傳錯誤，或超過 1.5 秒沒回應，mod 就不做新決策，狀態列顯示原因（`Jev HTTP 401`、`Jev timeout`）。如果是 session 的第一個 prompt，請求原樣送出，這個 session 從此都用你選的 model；不是第一個 prompt 的話，就維持 session 的 model 和上一回合的 effort。
+Jev 回傳錯誤，或超過 `jev_timeout_seconds`（預設 3 秒）沒回應，mod 就不做新決策，狀態列顯示原因（`Jev HTTP 401`、`Jev timeout`）。如果是 session 的第一個 prompt，請求原樣送出，這個 session 從此都用你選的 model；不是第一個 prompt 的話，就維持 session 的 model 和上一回合的 effort。
 
 ## 手動覆寫
 
@@ -133,7 +160,7 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 
 `api_key` 例外：它是敏感欄位，Claude Code 把它放在自己的安全儲存區，不寫進這個檔案。`TYPESAFE_API_KEY` 可以設在 shell，或同一個 `settings.json` 的 `env` 區塊。
 
-在 `/plugin configure` 選單裡，`default_mode` 和 `min_effort` 可以用左右鍵選；model 欄位因為也要能填完整 model ID，只能直接打字，留空代表用下表的預設值。
+在 `/plugin configure` 選單裡，`default_mode`、`min_effort` 和 `max_effort` 可以用左右鍵選；model 欄位因為也要能填完整 model ID，只能直接打字，留空代表用下表的預設值。
 
 | 設定 | 預設 | 說明 |
 |---|---|---|
@@ -144,7 +171,9 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 | `tier_min_probability` | 0.6 | 勝出的 model 要有多少機率，才換掉 session 的 model |
 | `signal_threshold` | 0.7 | 「接續」、「上次失敗」、「有風險」的機率要超過多少才算；三題共用這個門檻 |
 | `min_effort` | `low` | mod 設定的最低 effort |
+| `max_effort` | `max` | mod 設定的最高 effort；蓋過 `min_effort` 和「有風險」規則。你自己設的 effort 不受限制 |
 | `jev_model` | `jev-latest` | 填版本號（如 `jev-1.13.0`）就固定在那一版 |
+| `jev_timeout_seconds` | 3 | 你送出的每個 prompt，第一個請求最多等 Jev 幾秒（0.5–8）。等得越久，Jev 越有機會回答，但 Jev 慢的時候，每個 prompt 也會晚這麼久才開始 |
 | `send_assistant_tail` | 關 | 一併送出 Claude 上一則回答的最後約 1000 字（見[隱私](#隱私)） |
 
 ### model 名稱
