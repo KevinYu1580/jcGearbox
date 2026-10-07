@@ -92,7 +92,7 @@ In words:
 4. Keep it between `min_effort` and `max_effort`. `max_effort` is applied last, so if the two conflict, or the risky rule asks for more than `max_effort`, `max_effort` wins.
 5. Lower it to what the model takes (see the table below).
 
-Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability, and each counts only above 0.7 (`signal_threshold`). If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
+Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability. A continuation counts above 0.6 (`continuation_threshold`), the other two above 0.7 (`signal_threshold`). Jev also sees the end of Claude's last reply (`send_assistant_tail`, on by default), so a prompt that pastes the output Claude asked for, or answers its question, reads as a continuation. If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
 
 Examples from real sessions (October 2026, prompts translated from Chinese):
 
@@ -143,24 +143,27 @@ Also:
 
 ## Commands
 
+Each action is its own command, so typing `/jcmr` lists them all. The older form, `/jcmr <action>` (for example `/jcmr pin opus`), still works.
+
 | Command | Does |
 |---|---|
-| `/jcmr` | Shows the mode, the model and effort state, Jev's scores for the last prompt, and the model and effort the last request actually carried (`sent`), with the same reasons |
-| `/jcmr auto`, `/jcmr shadow`, `/jcmr off` | Sets the mode for this session only; new sessions start in `default_mode` |
-| `/jcmr pin <model>` | Pins a model for this session. Refuses an alias it can't resolve and a model the API already didn't serve in this session |
-| `/jcmr log [n]` | Lists the last `n` decisions (default 20) across all sessions. Each line starts with the model and effort the request carried. If Jev picked something else, `jev …` follows, then a reason (`pin`, `/model`, `shadow`, `ultracode`, `effort pinned`), and `served …` when the API answered as another model |
+| `/jcmr-status` (or `/jcmr`) | Shows the mode, the model and effort state, Jev's scores for the last prompt, and the model and effort the last request actually carried (`sent`), with the same reasons |
+| `/jcmr-auto`, `/jcmr-shadow`, `/jcmr-off` | Sets the mode for this session only; new sessions start in `default_mode`. `/jcmr-auto` also clears pins |
+| `/jcmr-on` | Turns the mod back on for this session after `/jcmr-off`, in `default_mode` (in `auto` if `default_mode` is `off`). Pins stay |
+| `/jcmr-pin <model>` | Pins a model for this session. Refuses an alias it can't resolve and a model the API already didn't serve in this session |
+| `/jcmr-log [n]` | Lists the last `n` decisions (default 20) across all sessions. Each line starts with the model and effort the request carried. If Jev picked something else, `jev …` follows, then a reason (`pin`, `/model`, `shadow`, `ultracode`, `effort pinned`), and `served …` when the API answered as another model |
 
 ## Status line
 
 ```
 jcmr ▸ opus-5-5·high                                 auto
 jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow: what was sent, then what auto would send
-jcmr(shadow)                    after a start, /clear, /resume or /jcmr, until the next decision
+jcmr(shadow)                    after a start, /clear, /resume or /jcmr-auto|shadow|off|on, until the next decision
 jcmr: no API key
 jcmr: needs Claude Code 2.1.286+
 ```
 
-The model and effort right after `▸` are what the request carried; when it carried no effort, the model's default from the table above. `jev <model·effort>` follows when Jev's pick differs. In `auto` the short form is just `jcmr`; in `off` the line is empty. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`.
+The model and effort right after `▸` are what the request carried; when it carried no effort, the model's default from the table above. `jev <model·effort>` follows when Jev's pick differs. The model and effort at the bottom of Claude Code (the model picker in the desktop app, the footer in the terminal) are the session's own setting, not what the mod sent, so they don't change when the mod does. The mod could only change them by running `/model` and `/effort`, which also save them as your default for new sessions, so it leaves them alone. In `auto` the short form is just `jcmr`; in `off` the line is empty. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`.
 
 If the API answers as a different model than the one requested, the mod stops asking for that model and shows `jcmr: <model> was not used (<model> answered); not switching to it again`. It does the same, with `no response` in the brackets, when a request gets no response and the turn ends in an error.
 
@@ -189,12 +192,13 @@ In the `/plugin configure` menu, `default_mode`, `min_effort` and `max_effort` a
 | `low_model`, `balanced_model`, `strong_model` | `haiku`, `sonnet`, `opus` | An alias (`sonnet`, `opus`, `haiku`, `fable`) or a full model id; `off` turns the tier off |
 | `long_model` | `fable` | An alias or a full model id; `off` turns the tier off. Fable 5.1 costs the most |
 | `tier_min_probability` | 0.6 | Probability the winning model needs before the session's model changes |
-| `signal_threshold` | 0.7 | Probability above which a continuation, a failed attempt or a risky task counts; one threshold for all three |
+| `signal_threshold` | 0.7 | Probability above which a failed attempt or a risky task counts |
+| `continuation_threshold` | 0.6 | Probability above which a prompt counts as continuing the last task and keeps its effort |
 | `min_effort` | `low` | Lowest effort the mod sets |
 | `max_effort` | `max` | Highest effort the mod sets; wins over `min_effort` and the risky rule. An effort you set yourself is not capped |
 | `jev_model` | `jev-latest` | A version such as `jev-1.13.0` pins one |
 | `jev_timeout_seconds` | 3 | How long the first request of each prompt you type waits for Jev, from 0.5 to 8. A longer wait gives Jev more time to answer, but when Jev is slow every prompt starts that much later |
-| `send_assistant_tail` | off | Also send the last ~1000 characters of Claude's previous reply (see [Privacy](#privacy)) |
+| `send_assistant_tail` | on | Also send the last ~1000 characters of Claude's previous reply (see [Privacy](#privacy)) |
 
 ### Model names
 
@@ -211,9 +215,9 @@ For each prompt you type, TypeSafe receives only:
 - the prompt, up to about 6000 characters (a longer one keeps its start and its end);
 - your previous prompt, up to about 1000 characters;
 - from the second prompt on, the session's current model and the last effort;
-- with `send_assistant_tail` on, the last ~1000 characters of Claude's previous reply.
+- the last ~1000 characters of Claude's previous reply, unless you turn `send_assistant_tail` off.
 
-Code, file contents and tool results are not sent unless they are in your prompt or `send_assistant_tail` is on. The text of a prompt you didn't type is never sent; with `send_assistant_tail` on, though, the end of Claude's reply to it can be.
+Code, file contents and tool results are not sent unless they are in your prompt or in the end of Claude's reply. The text of a prompt you didn't type is never sent, though the end of Claude's reply to it can be. Turn `send_assistant_tail` off to send only your own prompts; the continuation question then gets it right far less often (see [Limitations](#limitations)).
 
 TypeSafe says it does not train on this data, but not how long it keeps it.<!-- TODO: link TypeSafe's data policy --> Its servers are in the US, and zero retention is offered only on the enterprise plan.
 
@@ -221,12 +225,12 @@ On your machine, in Claude Code's plugin store, the mod keeps:
 
 - the first 200 characters of each prompt, in the decision log (the latest 200 decisions);
 - your last prompt in each session, up to 1000 characters (the latest 200 sessions);
-- with `send_assistant_tail` on, the end of Claude's last reply in each session. It stays until that session's record is pruned, even after you turn the option off.
+- the end of Claude's last reply in each session (unless `send_assistant_tail` is off). It stays until that session's record is pruned, even after you turn the option off.
 
 ## Limitations
 
 - There is little evidence that Jev can judge task difficulty. The evaluation of a reference implementation reports an AUC of 0.570, with a confidence interval that includes chance,<!-- TODO: name and link the reference implementation --> and there is no data on Traditional Chinese prompts.
-- In a first desktop test (October 2026, `jev-latest`), Jev scored two short, unrelated questions as continuations, at 0.79 and 0.80, and both inherited the last prompt's effort, `high` and `xhigh`. Raising `signal_threshold` to 0.85 would have rejected both, but also a real continuation that scored 0.77, and it would make the failure and risk signals harder to trigger as well.
+- The continuation question was measured on 169 of the author's own prompts (October 2026, `jev-latest`, labeled by two AI annotators who agreed on them): 148 continuations and 21 new tasks. Before, with only the previous prompt and a 0.7 threshold, it was right 59% of the time and missed 66 continuations. With the end of Claude's reply and a 0.6 threshold it is right 84% of the time: it misses 21 continuations and takes 6 of the 21 new tasks for continuations, which then keep the last effort. The end of Claude's reply does most of the work: at the old 0.7 threshold it alone cut the missed continuations from 66 to 34. Rewording the question didn't help. With so few new tasks, the second number is rough.
 - Compaction (automatic or `/compact`) and Claude Code's other side requests don't go through the hook the mod uses to rewrite requests. They run on the model you picked, at the session's own effort. When the mod has moved the session to another model, those requests can't read the conversation's prompt cache, and your picked model writes the summary.
 - The model list cache is an internal Claude Code file. If its format changes, the mod falls back to its built-in table, which needs updating when new models ship.
 - Only Opus 5.5 (Claude Code 2.1.280 and later) and Sonnet 5.5 (2.1.286) have been seen to keep the prompt cache when the effort changes, on a small sample.

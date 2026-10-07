@@ -92,7 +92,7 @@ flowchart TD
 4. 最後限制在 `min_effort` 和 `max_effort` 之間。`max_effort` 最後套用，所以兩者衝突，或「有風險」要求的等級超過 `max_effort` 時，以 `max_effort` 為準。
 5. 再降到 model 能用的等級（見下表）。
 
-「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率，超過 0.7（`signal_threshold`）才算數。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
+「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率。「接續」超過 0.6（`continuation_threshold`）才算，另外兩題要超過 0.7（`signal_threshold`）。Jev 也會看到 Claude 上一則回答的結尾（`send_assistant_tail`，預設開），所以貼上 Claude 要你跑的結果、或回答它的問題時，會被判成接續。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
 
 實際 session 的例子（2026 年 10 月）：
 
@@ -143,24 +143,27 @@ Jev 回傳錯誤，或超過 `jev_timeout_seconds`（預設 3 秒）沒回應，
 
 ## 指令
 
+每個動作都是獨立指令，輸入 `/jcmr` 時補全清單會全部列出。舊寫法 `/jcmr <動作>`（例如 `/jcmr pin opus`）仍然可用。
+
 | 指令 | 作用 |
 |---|---|
-| `/jcmr` | 顯示模式、model 和 effort 的狀態，上一則 prompt 的 Jev 分數，以及上一個請求實際帶的 model 和 effort（`sent`，附同樣的原因）|
-| `/jcmr auto`、`/jcmr shadow`、`/jcmr off` | 只改這個 session 的模式；新 session 從 `default_mode` 開始 |
-| `/jcmr pin <model>` | 這個 session 固定用某個 model。對應不到 ID 的別名，或這個 session 裡 API 沒用它回應過的 model，會被拒絕 |
-| `/jcmr log [n]` | 列出最近 `n` 筆決策（預設 20），包含所有 session。每行開頭是請求實際帶的 model 和 effort。Jev 選的不同時，後面接 `jev …`，再接原因（`pin`、`/model`、`shadow`、`ultracode`、`effort pinned`）；API 用別的 model 回應時再加 `served …` |
+| `/jcmr-status`（或 `/jcmr`） | 顯示模式、model 和 effort 的狀態，上一則 prompt 的 Jev 分數，以及上一個請求實際帶的 model 和 effort（`sent`，附同樣的原因）|
+| `/jcmr-auto`、`/jcmr-shadow`、`/jcmr-off` | 只改這個 session 的模式；新 session 從 `default_mode` 開始。`/jcmr-auto` 會一併清掉 pin |
+| `/jcmr-on` | `/jcmr-off` 之後重新開啟這個 session，回到 `default_mode`（`default_mode` 是 `off` 時改用 `auto`）。pin 會保留 |
+| `/jcmr-pin <model>` | 這個 session 固定用某個 model。對應不到 ID 的別名，或這個 session 裡 API 沒用它回應過的 model，會被拒絕 |
+| `/jcmr-log [n]` | 列出最近 `n` 筆決策（預設 20），包含所有 session。每行開頭是請求實際帶的 model 和 effort。Jev 選的不同時，後面接 `jev …`，再接原因（`pin`、`/model`、`shadow`、`ultracode`、`effort pinned`）；API 用別的 model 回應時再加 `served …` |
 
 ## 狀態列
 
 ```
 jcmr ▸ opus-5-5·high                                 auto
 jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：先是實際送出的，再來是開 auto 會送的
-jcmr(shadow)                    啟動、/clear、/resume 或 /jcmr 之後，到下一個決策之前
+jcmr(shadow)                    啟動、/clear、/resume 或 /jcmr-auto|shadow|off|on 之後，到下一個決策之前
 jcmr: no API key
 jcmr: needs Claude Code 2.1.286+
 ```
 
-`▸` 後面的 model 和 effort 是請求實際帶的；請求沒帶 effort 時，顯示上表該 model 的預設值。Jev 選的不同時，後面接 `jev <model·effort>`。`auto` 模式的簡短形式就是 `jcmr`；`off` 模式不顯示。視情況在後面加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr pin opus`、`built-in model table`、`Jev <錯誤>`。
+`▸` 後面的 model 和 effort 是請求實際帶的；請求沒帶 effort 時，顯示上表該 model 的預設值。Jev 選的不同時，後面接 `jev <model·effort>`。Claude Code 底部的 model 和 effort（桌面版的 model 選單、終端機的底部列）是 session 自己的設定，不是 mod 送出的值，所以 mod 換了它們也不會變。mod 只能靠執行 `/model`、`/effort` 改它們，但這兩個指令也會存成新 session 的預設值，所以 mod 不去動。`auto` 模式的簡短形式就是 `jcmr`；`off` 模式不顯示。視情況在後面加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr pin opus`、`built-in model table`、`Jev <錯誤>`。
 
 API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並顯示 `jcmr: <model> was not used (<model> answered); not switching to it again`。請求完全沒有回應、回合又因錯誤結束時也一樣，括號裡改成 `no response`。
 
@@ -189,12 +192,13 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 | `low_model`、`balanced_model`、`strong_model` | `haiku`、`sonnet`、`opus` | 別名（`sonnet`、`opus`、`haiku`、`fable`）或完整 model ID；填 `off` 停用該 tier |
 | `long_model` | `fable` | 別名或完整 model ID；填 `off` 停用。Fable 5.1 最貴 |
 | `tier_min_probability` | 0.6 | 勝出的 model 要有多少機率，才換掉 session 的 model |
-| `signal_threshold` | 0.7 | 「接續」、「上次失敗」、「有風險」的機率要超過多少才算；三題共用這個門檻 |
+| `signal_threshold` | 0.7 | 「上次失敗」、「有風險」的機率要超過多少才算 |
+| `continuation_threshold` | 0.6 | 「接續」的機率要超過多少才算，算的話沿用上一回合的 effort |
 | `min_effort` | `low` | mod 設定的最低 effort |
 | `max_effort` | `max` | mod 設定的最高 effort；蓋過 `min_effort` 和「有風險」規則。你自己設的 effort 不受限制 |
 | `jev_model` | `jev-latest` | 填版本號（如 `jev-1.13.0`）就固定在那一版 |
 | `jev_timeout_seconds` | 3 | 你送出的每個 prompt，第一個請求最多等 Jev 幾秒（0.5–8）。等得越久，Jev 越有機會回答，但 Jev 慢的時候，每個 prompt 也會晚這麼久才開始 |
-| `send_assistant_tail` | 關 | 一併送出 Claude 上一則回答的最後約 1000 字（見[隱私](#隱私)） |
+| `send_assistant_tail` | 開 | 一併送出 Claude 上一則回答的最後約 1000 字（見[隱私](#隱私)） |
 
 ### model 名稱
 
@@ -211,9 +215,9 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 - 這則 prompt，最多約 6000 字（太長就保留開頭和結尾）；
 - 你的上一則 prompt，最多約 1000 字；
 - 從第二個 prompt 起，session 目前的 model 和上一回合的 effort；
-- 開啟 `send_assistant_tail` 時，Claude 上一則回答的最後約 1000 字。
+- Claude 上一則回答的最後約 1000 字，除非你關掉 `send_assistant_tail`。
 
-程式碼、檔案內容和工具結果都不送，除非它們就在你的 prompt 裡，或你開了 `send_assistant_tail`。不是你打的 prompt，內容一律不送；但開了 `send_assistant_tail` 時，Claude 對它的回答結尾仍可能送出。
+程式碼、檔案內容和工具結果都不送，除非它們就在你的 prompt 裡，或在 Claude 回答的結尾裡。不是你打的 prompt，內容一律不送，但 Claude 對它的回答結尾可能送出。只想送自己的 prompt，請關掉 `send_assistant_tail`；代價是「接續」題的判斷準確度會明顯下降（見[已知限制](#已知限制)）。
 
 TypeSafe 表示不拿這些資料訓練，但沒寫明保留多久。<!-- TODO: 補上 TypeSafe 資料政策的連結 -->伺服器在美國，只有 enterprise 方案提供 zero retention。
 
@@ -221,12 +225,12 @@ TypeSafe 表示不拿這些資料訓練，但沒寫明保留多久。<!-- TODO: 
 
 - 每則 prompt 的前 200 字，記在決策紀錄裡（保留最近 200 筆）；
 - 每個 session 的上一則 prompt，最多 1000 字（保留最近 200 個 session）；
-- 開啟 `send_assistant_tail` 時，每個 session 中 Claude 上一則回答的結尾。關掉選項後它仍會留著，直到那個 session 的紀錄被清掉。
+- 每個 session 中 Claude 上一則回答的結尾（關掉 `send_assistant_tail` 時不存）。關掉選項後它仍會留著，直到那個 session 的紀錄被清掉。
 
 ## 已知限制
 
 - Jev 能不能判斷任務難度，證據很少：某個參考實作的評測 AUC 是 0.570，信賴區間包含亂猜<!-- TODO: 寫明是哪個參考實作並附連結 -->，也沒有繁體中文 prompt 的數據。
-- 第一次在桌面 App 實測時（2026 年 10 月，`jev-latest`），Jev 把兩則簡短、無關的問題判成接續（0.79 和 0.80），這兩則就沿用了上一個 prompt 的 `high` 和 `xhigh`。把 `signal_threshold` 調到 0.85 能擋下這兩則，但也會擋掉一則真正的接續（0.77），而且「上次失敗」和「有風險」兩題共用這個門檻，也會跟著變嚴。
+- 「接續」題用作者自己的 169 則 prompt 量過（2026 年 10 月，`jev-latest`，由兩個 AI 標註者各自標、兩者一致的部分）：148 則接續、21 則新任務。改之前只給上一個 prompt、門檻 0.7，正確率 59%，漏掉 66 則接續。給 Claude 回答的結尾、門檻 0.6 之後，正確率 84%：漏掉 21 則接續，21 則新任務裡有 6 則被當成接續、沿用了上一回合的 effort。主要是 Claude 回答的結尾在起作用：同樣用 0.7 門檻，光是加上它，漏判就從 66 降到 34。改寫題目的說法沒有幫助。新任務樣本少，後面這個數字只能當參考。
 - 對話壓縮（自動或 `/compact`）和 Claude Code 的其他附屬請求，不經過 mod 用來改寫請求的那個 hook，所以會用你選的 model 和 session 原本的 effort。mod 已經把 session 換到別的 model 時，這些請求讀不到對話的 prompt cache，摘要也由你選的 model 寫。
 - model 清單快取是 Claude Code 的內部檔案，格式改了 mod 就退回內建對照表，而內建表要在新 model 推出時更新。
 - 換 effort 不會讓 prompt cache 失效，這點只在 Opus 5.5（Claude Code 2.1.280 以後）和 Sonnet 5.5（2.1.286）上看過，樣本少。
