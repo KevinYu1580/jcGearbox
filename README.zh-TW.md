@@ -33,7 +33,7 @@ session 裡你送出的第一個 prompt，會請 Jev 判斷任務需要哪個 ti
 | `strong` | 複雜的代理式 coding 與企業工作：持續數小時的自主 coding agent、大規模重構、複雜系統工程、大量運用視覺的工作流程、電腦使用，例如跨模組設計、困難的除錯（並行、效能、記憶體）、架構或資安決策 | `opus` |
 | `long` | 現有最高能力：持續數小時的 agent session、多步驟深度研究、一路做到完成文件、試算表或簡報的分析 | `fable` |
 
-tier 依照 Anthropic 官方 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)的使用情境（2026-10-07 查閱）：Haiku 4.5 給最低延遲與價格，Sonnet 5.5 給日常 coding，Opus 5.5 給複雜 agentic coding，Fable 5.1 給最高能力。
+tier 依照 Anthropic 官方 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)的使用情境（2026-10-07 查閱）：Haiku 4.5 給最低延遲與價格，Sonnet 5.5 給日常 coding，Opus 5.5 給複雜 agentic coding，Fable 5.1 給最高能力。Jev 會偏向第一個列出的選項，所以選項順序是 Opus、Sonnet、Haiku、Fable：矩陣說大多數工作從 Opus 5.5 開始，Fable 則是 Opus 用到 `xhigh` 或 `max` 仍不夠時才升級的選擇。
 
 幾個 tier 對應到同一個 model 時，機率會加總，所以照預設設定，是在 Haiku、Sonnet、Opus 和 Fable 之間選。Fable 5.1 最貴，有些帳號也不能用（例如零資料保留）；不想讓 session 切到它，請把 `long_model` 設成 `off`。API 拒絕時，第一個 prompt 會失敗一次，之後這個 session 不再要求 Fable（見[狀態列](#狀態列)）。你設定的 tier 如果對應不到兩個以上不同的 model，就沒得選，也不會問 Jev tier 題。勝出的 model 機率要有 0.6（`tier_min_probability`）才會換，不到就維持你選的 model；平手時選較強的。
 
