@@ -4,7 +4,7 @@ import { JEV_URL, buildRequest, clip, parseAnswers } from './jev.ts'
 import type { JevRequest, JevResult } from './jev.ts'
 import { newestCatalogFile, resolveModel, surfaceOf, versionAtLeast } from './models.ts'
 import type { Resolved } from './models.ts'
-import { EFFORTS, TIERS, decideEffort, isEffort, pickModel } from './policy.ts'
+import { EFFORTS, TIERS, decideEffort, effortFor, isEffort, pickModel } from './policy.ts'
 import type { Effort, Tier } from './policy.ts'
 
 const MIN_VERSION = '2.1.286'
@@ -341,7 +341,8 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   }
 
   const chosen = current(r)
-  const effort = r.effortPinned || (turn.command && (changed || !baseline)) ? undefined : r.effort
+  const effort =
+    r.effortPinned || (turn.command && (changed || !baseline)) ? undefined : effortFor(chosen ?? model, r.effort)
   await save($, id, r)
 
   const shown = chosen ?? model

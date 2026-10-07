@@ -17,11 +17,19 @@ describe('auto mode', () => {
     expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
   })
 
-  test('low and balanced pool their probability: an easy prompt goes to sonnet', AUTO, async ($, on) => {
+  test('tiers on one model pool their probability: an easy prompt goes to sonnet', { options: { default_mode: 'auto', low_model: 'sonnet' } }, async ($, on) => {
     const w = world(on, { reply: EASY })
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'low' }])
+  })
+
+  test('an easy prompt picked for Haiku moves the session there and leaves the effort alone', AUTO, async ($, on) => {
+    const LOW = { answers: { ...EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.8, balanced: 0.1, strong: 0.1 }, confidence: 0.7 } } }
+    const w = world(on, { reply: LOW })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'], effort: null })
+    expect(w.steps).toEqual([{ model: 'claude-haiku-4-5-20251001' }])
   })
 
   test('later turns keep the model, a continuation keeps the effort, a notification asks nothing', AUTO, async ($, on) => {
@@ -91,7 +99,7 @@ describe('shadow mode', () => {
     expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
   })
 
-  test('leaves a lower effort judgement unapplied too', async ($, on) => {
+  test('leaves a lower effort judgement unapplied too', { options: { low_model: 'sonnet' } }, async ($, on) => {
     const w = world(on, { reply: EASY })
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5', 'claude-opus-5-5'] })

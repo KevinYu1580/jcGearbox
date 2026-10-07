@@ -9,24 +9,25 @@ const PROMPT_CHARS = 6000
 const CONTEXT_CHARS = 1000
 
 const TIER_CRITERIA: Record<Tier, string> = {
-  low: 'Lookup, explanation, rename, formatting, running a command, a one-line edit',
-  balanced: 'A typical feature or bug fix within one module, writing tests, a single-file refactor',
+  low: 'Simple, high-volume or latency-sensitive work: lookup, explanation, rename, formatting, running a command, a one-line edit, a sub-agent style task',
+  balanced:
+    'Everyday coding, data analysis, content creation and agentic tool use: a typical feature or bug fix within one module, writing tests, a single-file refactor',
   strong:
-    'Cross-module design, hard debugging (concurrency, performance, memory), architecture decisions, security, ambiguous requirements',
-  long: 'Multi-hour autonomous work, a repo-wide migration or audit',
+    'Complex agentic coding and systems work: large-scale refactoring, cross-module design, hard debugging (concurrency, performance, memory), architecture decisions, security, ambiguous requirements, multi-hour autonomous coding',
+  long: 'The highest capability: agent sessions that run for hours, multistep deep research, analysis carried through to a finished document, spreadsheet or deck, a repo-wide migration or audit',
 }
 
 const QUESTIONS = {
   effort: {
     type: 'score',
     instructions:
-      'How much deliberate step-by-step reasoning does `prompt` need? When `prompt` is short, judge it as part of the task in `previous_prompt` and `previous_reply_tail`.',
+      'Which effort level does the work in `prompt` call for? When `prompt` is short, judge it as part of the task in `previous_prompt` and `previous_reply_tail`.',
     criteria: [
-      'Mechanical, no reasoning',
-      'A little reasoning',
-      'Moderate reasoning',
-      'Deep reasoning',
-      'Maximal: subtle, high-stakes reasoning',
+      'Low: a simple, scoped task that needs the fastest, cheapest answer, such as a lookup, a rename or a one-line edit',
+      'Medium: a balance of speed, cost and quality, such as a routine agentic task or a well-specified change',
+      'High: complex reasoning, a difficult coding problem or a demanding agentic task',
+      'Xhigh: long-horizon agentic or coding work, over 30 minutes, with a large token budget',
+      'Max: the deepest possible reasoning and most thorough analysis, with no limit on tokens',
     ],
   },
   continuation: {

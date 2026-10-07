@@ -27,8 +27,8 @@
     "low_model": {
       "type": "string",
       "title": "Low tier model",
-      "description": "Default: sonnet. Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
-      "default": "sonnet"
+      "description": "Default: haiku (no effort setting, 200K context; a session whose first prompt picks it stays on it). Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
+      "default": "haiku"
     },
     "balanced_model": {
       "type": "string",

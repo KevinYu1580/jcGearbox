@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { decideEffort, effortFromScore, pickModel } from '../hooks/policy.ts'
+import { decideEffort, effortFor, effortFromScore, pickModel } from '../hooks/policy.ts'
 
 const base = { threshold: 0.7, minEffort: 'low' as const, maxEffort: 'max' as const }
 
@@ -51,14 +51,14 @@ describe('decideEffort', () => {
     expect(r).toEqual({ effort: 'max', escalated: true })
   })
 
-  test('high stakes lifts the effort to at least xhigh', () => {
+  test('high stakes lifts the effort to at least high', () => {
     const r = decideEffort({
       ...base,
       isFirstTurn: false,
       previous: 'low',
       signals: { effortScore: 0.4, highStakes: 0.8 },
     })
-    expect(r.effort).toBe('xhigh')
+    expect(r.effort).toBe('high')
   })
 
   test('the floor applies last', () => {
@@ -143,5 +143,25 @@ describe('pickModel', () => {
   test('tiers without a model and missing answers are ignored', () => {
     expect(pickModel({ models, minProbability: 0.6, probabilities: { long: 0.9, strong: 0.1 } })).toBeUndefined()
     expect(pickModel({ models, minProbability: 0.6, probabilities: undefined })).toBeUndefined()
+  })
+})
+
+describe('effortFor', () => {
+  test('Haiku takes no effort', () => {
+    expect(effortFor('claude-haiku-4-5-20251001', 'low')).toBeUndefined()
+  })
+
+  test('Opus 4.5 stops at high; Opus 4.6 and Sonnet 4.6 have no xhigh', () => {
+    expect(effortFor('claude-opus-4-5-20251101', 'max')).toBe('high')
+    expect(effortFor('claude-opus-4-5-20251101', 'medium')).toBe('medium')
+    expect(effortFor('claude-opus-4-6', 'xhigh')).toBe('high')
+    expect(effortFor('claude-sonnet-4-6', 'max')).toBe('max')
+  })
+
+  test('current models and unknown ids take every level', () => {
+    for (const model of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1', 'my-gateway-model']) {
+      expect(effortFor(model, 'xhigh')).toBe('xhigh')
+    }
+    expect(effortFor('claude-opus-5-5', undefined)).toBeUndefined()
   })
 })

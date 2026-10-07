@@ -275,7 +275,7 @@ describe('a model that is not served', () => {
 })
 
 describe('tiers that all resolve to one model', () => {
-  test('ask no tier question and keep the engine model', { options: { default_mode: 'auto', strong_model: 'sonnet' } }, async ($, on) => {
+  test('ask no tier question and keep the engine model', { options: { default_mode: 'auto', low_model: 'sonnet', strong_model: 'sonnet' } }, async ($, on) => {
     const w = world(on, { reply: answering(STRONG) })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'] })

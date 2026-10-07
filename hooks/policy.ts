@@ -35,9 +35,20 @@ function oneUp(effort: Effort): Effort {
   return EFFORTS[Math.min(EFFORTS.length - 1, EFFORTS.indexOf(effort) + 1)] ?? effort
 }
 
+// What `model` accepts, per Anthropic's effort docs: Haiku takes no effort
+// (undefined), Opus 4.5 stops at high, Opus 4.6 and Sonnet 4.6 have no xhigh.
+// Any other model, including ids we do not know, takes every level.
+export function effortFor(model: string, effort: Effort | undefined): Effort | undefined {
+  if (!effort || /haiku/.test(model)) return undefined
+  if (/opus-4-5/.test(model)) return atMost(effort, 'high')
+  if (/opus-4-6|sonnet-4-6/.test(model) && effort === 'xhigh') return 'high'
+  return effort
+}
+
 // Start from the previous effort on a continuation, else from Jev's score;
-// then a complaint raises it a level and a high-stakes task lifts it to xhigh.
-// The floor applies next and the ceiling last, so the ceiling wins.
+// then a complaint raises it a level and a high-stakes task lifts it to high
+// (xhigh is for long-running work). The floor applies next and the ceiling
+// last, so the ceiling wins.
 export function decideEffort(input: {
   signals: Signals | undefined
   previous: Effort | undefined
@@ -62,7 +73,7 @@ export function decideEffort(input: {
   if (!effort) return { effort: undefined, escalated: false }
 
   if (escalated) effort = oneUp(effort)
-  if (holds(signals.highStakes)) effort = atLeast(effort, 'xhigh')
+  if (holds(signals.highStakes)) effort = atLeast(effort, 'high')
   return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated }
 }
 
