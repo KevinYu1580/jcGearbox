@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { STRONG, firstStrongThenContinue, start, turn, world } from './world.ts'
 
 const TAIL = { options: { send_assistant_tail: true } }
+const NO_TAIL = { options: { send_assistant_tail: false } }
 
 describe('the Jev request', () => {
   test('is a POST to systemone with the bearer key, asking jev-latest', async ($, on) => {
@@ -51,7 +52,15 @@ describe('send_assistant_tail', () => {
     expect(tail.endsWith('Shall I apply?')).toBe(true)
   })
 
-  test("off by default: the reply's end is not kept", async ($, on) => {
+  test("on by default: Claude's reply reaches the next request", async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: 'Shall I apply?' })
+    await turn($, 'yes', 't2')
+    expect(w.asked[1].state.previous_reply_tail).toBe('Shall I apply?')
+  })
+
+  test("off: the reply's end is not kept", NO_TAIL, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { answer: 'Shall I apply?' })
@@ -60,7 +69,7 @@ describe('send_assistant_tail', () => {
     expect(w.db.get('session:session-1')).not.toHaveProperty('replyTail')
   })
 
-  test('off by default: a tail kept earlier is not sent', async ($, on) => {
+  test('off: a tail kept earlier is not sent', NO_TAIL, async ($, on) => {
     const w = world(on, { reply: STRONG, store: { 'session:session-1': { replyTail: 'Shall I apply?' } } })
     await start($)
     await turn($, 'redesign the sync engine', 't1')

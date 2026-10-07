@@ -13,6 +13,7 @@ export type World = {
   steps: Step[] // the model requests as they reached the engine
   db: Map<string, unknown> // $.store
   listed: string[] // the directories the plugin listed
+  registered: string[] // the slash commands the plugin registered
   session: string // what $.session.id() answers; a test may change it
   clock: ReturnType<typeof mock.clock>
 }
@@ -55,6 +56,7 @@ export function world(on: On, o: WorldOptions = {}): World {
     steps: [],
     db: new Map(Object.entries(o.store ?? {})),
     listed: [],
+    registered: [],
     session: 'session-1',
     clock: mock.clock(on),
   }
@@ -93,7 +95,10 @@ export function world(on: On, o: WorldOptions = {}): World {
     w.status.push(e.text)
     return { value: undefined }
   })
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('command.register', ($, e) => {
+    w.registered.push(e.name)
+    return { value: { command: e.name } }
+  })
   on('http.fetch', async ($, e) => {
     const body = JSON.parse(e.init?.body ?? '{}')
     w.asked.push(body)
@@ -170,6 +175,10 @@ export const commandText = (name: string, args: string) =>
 
 export const command = ($: any, args: string) =>
   $.command.run({ command: 'jcmr', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+
+// One of the /jcmr-<action> commands.
+export const run = ($: any, name: string, args = '') =>
+  $.command.run({ command: name, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
 
 export const switchModel = ($: any, from: string, to: string, source = 'picker') =>
   $.classic.PostModelSwitch({

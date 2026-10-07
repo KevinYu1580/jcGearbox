@@ -66,14 +66,15 @@ export function decideEffort(input: {
   previous: Effort | undefined
   isFirstTurn: boolean
   threshold: number
+  continuationThreshold: number
   minEffort: Effort
   maxEffort: Effort
 }): { effort: Effort | undefined; escalated: boolean } {
-  const { signals, previous, isFirstTurn, threshold, minEffort, maxEffort } = input
+  const { signals, previous, isFirstTurn, threshold, continuationThreshold, minEffort, maxEffort } = input
   if (!signals) return { effort: isFirstTurn || !previous ? undefined : atMost(previous, maxEffort), escalated: false }
 
   const holds = (p: number | undefined) => p !== undefined && p > threshold
-  const isContinuation = !isFirstTurn && holds(signals.continuation)
+  const isContinuation = !isFirstTurn && signals.continuation !== undefined && signals.continuation > continuationThreshold
   const escalated = !isFirstTurn && holds(signals.escalate)
 
   let effort =

@@ -48,6 +48,7 @@ describe('auto mode', () => {
     expect(w.asked[1].state).toEqual({
       prompt: '好',
       previous_prompt: 'redesign the sync engine',
+      previous_reply_tail: 'done',
       previous: { model: 'claude-opus-5-5', effort: 'high' },
     })
   })

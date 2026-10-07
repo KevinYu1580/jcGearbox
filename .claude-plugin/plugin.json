@@ -1,6 +1,6 @@
 {
   "name": "jev-cc-model-router",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
   "author": {
     "name": "KevinYu1580"
@@ -59,10 +59,18 @@
     "signal_threshold": {
       "type": "number",
       "title": "Signal threshold",
-      "description": "Default: 0.7. Probability above which a continuation, a complaint about the last attempt, or a high-stakes task counts.",
+      "description": "Default: 0.7. Probability above which a complaint about the last attempt, or a high-stakes task, counts.",
       "min": 0,
       "max": 1,
       "default": 0.7
+    },
+    "continuation_threshold": {
+      "type": "number",
+      "title": "Continuation threshold",
+      "description": "Default: 0.6. Probability above which a prompt counts as continuing the last task, so it keeps the last effort. Lower keeps the effort more often, also for some new tasks.",
+      "min": 0,
+      "max": 1,
+      "default": 0.6
     },
     "min_effort": {
       "type": "string",
@@ -107,8 +115,8 @@
     "send_assistant_tail": {
       "type": "boolean",
       "title": "Send the end of Claude's last reply",
-      "description": "Also send the last ~1000 characters of Claude's previous reply to Jev, so a short answer such as 'ok' is judged against what it answers.",
-      "default": false
+      "description": "Default: on. Also send the last ~1000 characters of Claude's previous reply to Jev, so a prompt that answers it, or pastes the output it asked for, is judged against it. Turn off to send only your prompts.",
+      "default": true
     }
   }
 }

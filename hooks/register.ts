@@ -14,7 +14,7 @@ const CONTEXT_CHARS = 1000
 // Remote Control, or Slack. Anything else (a task notification, a schedule,
 // another session) continues the session as it is and never reaches Jev.
 const USER_ORIGINS = new Set(['composer', 'sdk', 'bridge', 'slack-ping'])
-const USAGE = 'Usage: /jcmr [auto | shadow | off | pin <model> | log [n]]'
+const USAGE = 'Usage: /jcmr [status | auto | shadow | off | on | pin <model> | log [n]], or /jcmr-<that>'
 // The engine puts this before a Slack message's text by the time its turn starts.
 const NON_USER_FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
 
@@ -87,8 +87,17 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'jcmr',
       description: 'Jev model router: status, mode, pin, log',
-      argumentHint: '[auto | shadow | off | pin <model> | log [n]]',
+      argumentHint: '[status | auto | shadow | off | on | pin <model> | log [n]]',
     })
+    // One command per action, so the typeahead lists them all; /jcmr <action> still works.
+    const d = 'Jev model router:'
+    await $.command.register({ name: 'jcmr-status', description: `${d} this session's mode, model, effort and last request` })
+    await $.command.register({ name: 'jcmr-auto', description: `${d} route model and effort in this session; clears pins` })
+    await $.command.register({ name: 'jcmr-shadow', description: `${d} judge and show, but send requests unchanged, in this session` })
+    await $.command.register({ name: 'jcmr-off', description: `${d} turn it off for this session` })
+    await $.command.register({ name: 'jcmr-on', description: `${d} turn it back on for this session (default mode, or auto)` })
+    await $.command.register({ name: 'jcmr-pin', description: `${d} use one model for this session`, argumentHint: '<alias or model id>' })
+    await $.command.register({ name: 'jcmr-log', description: `${d} recent decisions, across sessions`, argumentHint: '[n]' })
     await prune($)
     await showMode($, ctx)
     return next(e)
@@ -195,39 +204,60 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'jcmr' }, async ($, e) => {
+  on('command.run', { command: 'jcmr' }, ($, e) => {
     const [sub = '', arg] = e.args.trim().split(/\s+/)
-    const [id, r] = await record($)
-    if (sub === '') return { text: report(r, opt.defaultMode) }
-    if (sub === 'auto' || sub === 'shadow' || sub === 'off') {
-      r.mode = sub
-      if (sub === 'auto') {
-        delete r.pin
-        delete r.userModel
-        delete r.effortPinned
-        delete r.rawEffort
-      }
-      await save($, id, r)
-      await showMode($, ctx)
-      return { text: sub === 'auto' ? 'jcmr: auto for this session; pins cleared.' : `jcmr: ${sub} for this session.` }
-    }
-    if (sub === 'pin' && arg) {
-      const pinned = resolveModel(arg, await resolution($, ctx, id))
-      if (!pinned) return { text: `jcmr: cannot resolve "${arg}" here; give a full model id.` }
-      if (r.badModels?.includes(pinned.id)) {
-        return { text: `jcmr: ${pinned.id} was not used when asked for earlier in this session; not pinning it.` }
-      }
-      r.pin = pinned.id
-      delete r.userModel
-      await save($, id, r)
-      return { text: `jcmr: model pinned to ${pinned.id} for this session (/jcmr auto clears it).` }
-    }
-    if (sub === 'log') {
-      const n = Number.parseInt(arg ?? '', 10)
-      return { text: await logText($, n > 0 ? n : 20) }
-    }
-    return { text: USAGE }
+    return jcmr($, ctx, sub, arg)
   })
+  on('command.run', { command: 'jcmr-status' }, $ => jcmr($, ctx, 'status', undefined))
+  on('command.run', { command: 'jcmr-auto' }, $ => jcmr($, ctx, 'auto', undefined))
+  on('command.run', { command: 'jcmr-shadow' }, $ => jcmr($, ctx, 'shadow', undefined))
+  on('command.run', { command: 'jcmr-off' }, $ => jcmr($, ctx, 'off', undefined))
+  on('command.run', { command: 'jcmr-on' }, $ => jcmr($, ctx, 'on', undefined))
+  on('command.run', { command: 'jcmr-pin' }, ($, e) => jcmr($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
+  on('command.run', { command: 'jcmr-log' }, ($, e) => jcmr($, ctx, 'log', e.args.trim().split(/\s+/)[0] || undefined))
+}
+
+async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | undefined) {
+  const { opt } = ctx
+  const [id, r] = await record($)
+  if (sub === '' || sub === 'status') return { text: report(r, opt.defaultMode) }
+  // Back on drops the session's own mode (auto when the default is off) and
+  // keeps any pin: it undoes /jcmr-off, not /model or /jcmr-pin.
+  if (sub === 'on') {
+    if (opt.defaultMode === 'off') r.mode = 'auto'
+    else delete r.mode
+    await save($, id, r)
+    await showMode($, ctx)
+    return { text: `jcmr: ${r.mode ?? opt.defaultMode} for this session.` }
+  }
+  if (sub === 'auto' || sub === 'shadow' || sub === 'off') {
+    r.mode = sub
+    if (sub === 'auto') {
+      delete r.pin
+      delete r.userModel
+      delete r.effortPinned
+      delete r.rawEffort
+    }
+    await save($, id, r)
+    await showMode($, ctx)
+    return { text: sub === 'auto' ? 'jcmr: auto for this session; pins cleared.' : `jcmr: ${sub} for this session.` }
+  }
+  if (sub === 'pin' && arg) {
+    const pinned = resolveModel(arg, await resolution($, ctx, id))
+    if (!pinned) return { text: `jcmr: cannot resolve "${arg}" here; give a full model id.` }
+    if (r.badModels?.includes(pinned.id)) {
+      return { text: `jcmr: ${pinned.id} was not used when asked for earlier in this session; not pinning it.` }
+    }
+    r.pin = pinned.id
+    delete r.userModel
+    await save($, id, r)
+    return { text: `jcmr: model pinned to ${pinned.id} for this session (/jcmr-auto clears it).` }
+  }
+  if (sub === 'log') {
+    const n = Number.parseInt(arg ?? '', 10)
+    return { text: await logText($, n > 0 ? n : 20) }
+  }
+  return { text: USAGE }
 }
 
 async function record($: EngineInterface): Promise<[string, SessionRecord]> {
@@ -320,6 +350,7 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
       previous: r.effort,
       isFirstTurn: first,
       threshold: opt.signalThreshold,
+      continuationThreshold: opt.continuationThreshold,
       minEffort: opt.minEffort,
       maxEffort: opt.maxEffort,
     })
@@ -547,6 +578,7 @@ function readOptions(options: PluginOptions) {
     } as Record<Tier, string | undefined>,
     tierMinProbability: num('tier_min_probability'),
     signalThreshold: num('signal_threshold'),
+    continuationThreshold: num('continuation_threshold'),
     minEffort: (text('min_effort') ?? 'low') as Effort,
     maxEffort: (text('max_effort') ?? 'max') as Effort,
     jevModel: text('jev_model') || 'jev-latest',

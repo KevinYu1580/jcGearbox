@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, EASY, STRONG, command, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
+import { AUTO, EASY, STRONG, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
 
 const HAIKU = 'claude-haiku-4-5-20251001'
 
@@ -290,3 +290,52 @@ describe('tiers that all resolve to one model', () => {
     expect(w.asked[0].questions.tier).toBeUndefined()
   })
 })
+
+describe('the /jcmr-<action> commands', () => {
+  test('are registered next to /jcmr', async ($, on) => {
+    const w = world(on)
+    await start($)
+    expect(w.registered).toEqual(['jcmr', 'jcmr-status', 'jcmr-auto', 'jcmr-shadow', 'jcmr-off', 'jcmr-on', 'jcmr-pin', 'jcmr-log'])
+  })
+
+  test('do what /jcmr <action> does', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect((await run($, 'jcmr-status')).text).toBe((await command($, '')).text)
+    expect((await run($, 'jcmr-pin', 'sonnet')).text).toContain('model pinned to claude-sonnet-5-5')
+    await turn($, 'go on', 't2')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+    expect((await run($, 'jcmr-log', '1')).text.split('\n')).toHaveLength(1)
+    expect((await run($, 'jcmr-off')).text).toBe('jcmr: off for this session.')
+    await turn($, 'one more', 't3')
+    expect(w.asked).toHaveLength(2)
+  })
+
+  test('/jcmr-on keeps a pin', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await run($, 'jcmr-pin', 'sonnet')
+    await run($, 'jcmr-off')
+    expect((await run($, 'jcmr-on')).text).toBe('jcmr: auto for this session.')
+    await turn($, 'go on', 't2')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+    expect((await command($, '')).text).toContain('jcmr: auto (default)')
+  })
+
+  test('/jcmr-on goes back to the default mode', async ($, on) => {
+    world(on, { reply: STRONG })
+    await start($)
+    await run($, 'jcmr-off')
+    expect((await run($, 'jcmr-on')).text).toBe('jcmr: shadow for this session.')
+    expect((await command($, 'on')).text).toBe('jcmr: shadow for this session.')
+  })
+
+  test('/jcmr-on turns auto on when the default mode is off', { options: { default_mode: 'off' } }, async ($, on) => {
+    world(on, { reply: STRONG })
+    await start($)
+    expect((await run($, 'jcmr-on')).text).toBe('jcmr: auto for this session.')
+  })
+})
+

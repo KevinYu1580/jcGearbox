@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { decideEffort, defaultEffort, effortFor, effortFromScore, pickModel } from '../hooks/policy.ts'
 
-const base = { threshold: 0.7, minEffort: 'low' as const, maxEffort: 'max' as const }
+const base = { threshold: 0.7, continuationThreshold: 0.7, minEffort: 'low' as const, maxEffort: 'max' as const }
 
 describe('effortFromScore', () => {
   test('rounds the expected level and clamps it to the scale', () => {
@@ -100,6 +100,13 @@ describe('decideEffort', () => {
     expect(capped({ highStakes: 0.9 })).toBe('high')
     expect(capped({}, { minEffort: 'max' })).toBe('high')
     expect(decideEffort({ ...base, maxEffort: 'medium', isFirstTurn: false, previous: 'xhigh', signals: undefined }).effort).toBe('medium')
+  })
+
+  test('a continuation has its own threshold', () => {
+    const at = (continuation: number) =>
+      decideEffort({ ...base, continuationThreshold: 0.6, isFirstTurn: false, previous: 'high', signals: { effortScore: 0, continuation, escalate: 0.65 } })
+    expect(at(0.65)).toEqual({ effort: 'high', escalated: false })
+    expect(at(0.6).effort).toBe('low')
   })
 
   test('a complaint or high stakes at the threshold does not count either', () => {
