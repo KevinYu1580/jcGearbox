@@ -30,6 +30,7 @@ type Decision = {
   error?: string
   model?: string
   effort?: Effort
+  sent?: { model: string; effort: string | number | null } // what the request carried: ours in auto, the engine's own otherwise
 }
 
 // One per session id, in $.store, so a resumed session keeps its choice.
@@ -336,13 +337,17 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
       ...(r.model ? { model: r.model } : {}),
       ...(decided.effort ? { effort: decided.effort } : {}),
     }
-    await $.store.set(`log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`, { ...r.last, session: id })
-    await trim($, 'log:', KEEP)
   }
 
   const chosen = current(r)
   const effort =
     r.effortPinned || (turn.command && (changed || !baseline)) ? undefined : effortFor(chosen ?? model, r.effort)
+  if (asked && r.last) {
+    const auto = mode === 'auto'
+    r.last.sent = { model: auto && chosen ? chosen : model, effort: auto && effort ? effort : rawEffort ?? null }
+    await $.store.set(`log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`, { ...r.last, session: id })
+    await trim($, 'log:', KEEP)
+  }
   await save($, id, r)
 
   const shown = chosen ?? model
@@ -395,6 +400,7 @@ async function showMode($: EngineInterface, ctx: Ctx) {
 }
 
 const pct = (p: number) => p.toFixed(2)
+const sentLabel = (sent: NonNullable<Decision['sent']>) => `${label(sent.model)}·${sent.effort ?? '-'}`
 
 function report(r: SessionRecord, defaultMode: Mode): string {
   const dropped = (m: string) => (r.badModels?.includes(m) ? '; not served, no longer asked for' : '')
@@ -423,6 +429,7 @@ function report(r: SessionRecord, defaultMode: Mode): string {
     if (s?.escalate !== undefined) parts.push(`complaint ${pct(s.escalate)}`)
     if (s?.highStakes !== undefined) parts.push(`high stakes ${pct(s.highStakes)}`)
     lines.push(`last turn: ${parts.join(' · ') || 'no answer'}${last.error ? ` (Jev ${last.error})` : ''}`)
+    if (last.sent) lines.push(`sent: ${sentLabel(last.sent)}`)
   }
   return lines.join('\n')
 }
@@ -436,7 +443,8 @@ async function logText($: EngineInterface, n: number): Promise<string> {
     const t = new Date(d.at)
     const when = `${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`
     const flags = `${d.first ? '  first' : ''}${d.error ? `  Jev ${d.error}` : ''}`
-    lines.push(`${when}  ${d.mode.padEnd(6)} ${d.model ? label(d.model) : 'unchanged'}·${d.effort ?? '-'}${flags}  "${d.prompt.slice(0, 60)}"`)
+    const sent = d.sent ? `  sent ${sentLabel(d.sent)}` : ''
+    lines.push(`${when}  ${d.mode.padEnd(6)} ${d.model ? label(d.model) : 'unchanged'}·${d.effort ?? '-'}${sent}${flags}  "${d.prompt.slice(0, 60)}"`)
   }
   return lines.length > 0 ? lines.join('\n') : 'jcmr: no decisions logged yet.'
 }

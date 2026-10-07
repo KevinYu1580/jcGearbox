@@ -99,6 +99,14 @@ describe('shadow mode', () => {
     expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
   })
 
+  test('/jcmr and its log show what was sent, not what Jev picked', async ($, on) => {
+    world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect((await command($, '')).text).toContain('sent: sonnet-5-5·high')
+    expect((await command($, 'log')).text).toContain('opus-5-5·high  sent sonnet-5-5·high')
+  })
+
   test('leaves a lower effort judgement unapplied too', { options: { low_model: 'sonnet' } }, async ($, on) => {
     const w = world(on, { reply: EASY })
     await start($)
@@ -216,8 +224,9 @@ describe('/jcmr', () => {
     expect(report.text).toContain('tier strong 0.80')
     expect(report.text).toContain('effort 2.20')
     expect(report.text).toContain('high stakes 0.10')
+    expect(report.text).toContain('sent: opus-5-5·high')
     const log = await command($, 'log')
-    expect(log.text).toContain('opus-5-5·high')
+    expect(log.text).toContain('opus-5-5·high  sent opus-5-5·high')
     expect(log.text).toContain('redesign the sync engine')
   })
 
