@@ -127,10 +127,10 @@ Jev 回傳錯誤，或超過 `jev_timeout_seconds`（預設 3 秒）沒回應，
 
 | 指令 | 作用 |
 |---|---|
-| `/jcmr` | 顯示模式、model 和 effort 的狀態，上一則 prompt 的 Jev 分數，以及上一個請求實際帶的 model 和 effort（`sent`）|
+| `/jcmr` | 顯示模式、model 和 effort 的狀態，上一則 prompt 的 Jev 分數，以及上一個請求實際帶的 model 和 effort（`sent`，附同樣的原因）|
 | `/jcmr auto`、`/jcmr shadow`、`/jcmr off` | 只改這個 session 的模式；新 session 從 `default_mode` 開始 |
 | `/jcmr pin <model>` | 這個 session 固定用某個 model。對應不到 ID 的別名，或這個 session 裡 API 沒用它回應過的 model，會被拒絕 |
-| `/jcmr log [n]` | 列出最近 `n` 筆決策（預設 20），包含所有 session。每行先是 Jev 的選擇，接著 `sent` 是請求實際帶的值（`shadow` 模式就是 session 自己的 model 和 effort）|
+| `/jcmr log [n]` | 列出最近 `n` 筆決策（預設 20），包含所有 session。每行開頭是請求實際帶的 model 和 effort。Jev 選的不同時，後面接 `jev …`，再接原因（`pin`、`/model`、`shadow`、`effort pinned`）；API 用別的 model 回應時再加 `served …` |
 
 ## 狀態列
 
