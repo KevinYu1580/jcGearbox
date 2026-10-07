@@ -127,10 +127,10 @@ Also:
 
 | Command | Does |
 |---|---|
-| `/jcmr` | Shows the mode, the model and effort state, and Jev's scores for the last prompt |
+| `/jcmr` | Shows the mode, the model and effort state, Jev's scores for the last prompt, and the model and effort the last request actually carried (`sent`) |
 | `/jcmr auto`, `/jcmr shadow`, `/jcmr off` | Sets the mode for this session only; new sessions start in `default_mode` |
 | `/jcmr pin <model>` | Pins a model for this session. Refuses an alias it can't resolve and a model the API already didn't serve in this session |
-| `/jcmr log [n]` | Lists the last `n` decisions (default 20) across all sessions |
+| `/jcmr log [n]` | Lists the last `n` decisions (default 20) across all sessions. Each line has Jev's pick, then `sent`: what the request carried (in `shadow` that is the session's own model and effort) |
 
 ## Status line
 
