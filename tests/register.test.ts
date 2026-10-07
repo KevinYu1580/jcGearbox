@@ -103,8 +103,28 @@ describe('shadow mode', () => {
     world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect((await command($, '')).text).toContain('sent: sonnet-5-5·high')
-    expect((await command($, 'log')).text).toContain('opus-5-5·high  sent sonnet-5-5·high')
+    expect((await command($, '')).text).toContain('sent: sonnet-5-5·high · shadow')
+    expect((await command($, 'log')).text).toContain('sonnet-5-5·high  jev opus-5-5·high · shadow')
+  })
+
+  test('a pin shows as the sent model, with Jev\'s pick beside it', { options: { default_mode: 'auto', low_model: 'sonnet' } }, async ($, on) => {
+    world(on, { reply: EASY })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    expect((await command($, 'pin opus')).text).toContain('opus')
+    await turn($, 'rename bar to baz', 't2')
+    const last = (await command($, 'log 1')).text
+    expect(last).toContain('opus-5-5·')
+    expect(last).toContain('jev sonnet-5-5·low · pin')
+    expect((await command($, '')).text).toContain(' · pin')
+  })
+
+  test('a model the API did not answer as is named in the log and /jcmr', AUTO, async ($, on) => {
+    world(on, { reply: STRONG, answeredAs: 'claude-sonnet-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect((await command($, 'log')).text).toContain('opus-5-5·high · served sonnet-5-5')
+    expect((await command($, '')).text).toContain('sent: opus-5-5·high · served sonnet-5-5')
   })
 
   test('leaves a lower effort judgement unapplied too', { options: { low_model: 'sonnet' } }, async ($, on) => {
@@ -226,7 +246,8 @@ describe('/jcmr', () => {
     expect(report.text).toContain('high stakes 0.10')
     expect(report.text).toContain('sent: opus-5-5·high')
     const log = await command($, 'log')
-    expect(log.text).toContain('opus-5-5·high  sent opus-5-5·high')
+    expect(log.text).toContain('opus-5-5·high')
+    expect(log.text).not.toContain('jev')
     expect(log.text).toContain('redesign the sync engine')
   })
 

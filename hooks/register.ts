@@ -31,6 +31,8 @@ type Decision = {
   model?: string
   effort?: Effort
   sent?: { model: string; effort: string | number | null } // what the request carried: ours in auto, the engine's own otherwise
+  why?: string[] // what made it differ from Jev's pick: shadow, pin, /model, effort pinned
+  served?: string // the model the API answered as, when it was not the one sent
 }
 
 // One per session id, in $.store, so a resumed session keeps its choice.
@@ -50,7 +52,7 @@ type SessionRecord = {
   last?: Decision
 }
 
-type Plan = { apply: boolean; model?: string; effort?: Effort }
+type Plan = { apply: boolean; model?: string; effort?: Effort; logKey?: string }
 type Turn = {
   isUser: boolean
   text: string
@@ -132,15 +134,20 @@ export const register: Register = (on, options) => {
       return yield* next(e) // the engine fell back to another model: leave it
     }
 
-    const { apply, model, effort } = turn.plan
+    const { apply, model, effort, logKey } = turn.plan
     const rewritesModel = apply && model !== undefined && model !== e.model
-    if (!rewritesModel && !(apply && effort)) return yield* next(e)
-
-    const result = yield* next({
-      ...e,
-      ...(rewritesModel ? { model } : {}),
-      ...(apply && effort ? { effort } : {}),
-    })
+    const result =
+      !rewritesModel && !(apply && effort)
+        ? yield* next(e)
+        : yield* next({
+            ...e,
+            ...(rewritesModel ? { model } : {}),
+            ...(apply && effort ? { effort } : {}),
+          })
+    if (logKey) {
+      turn.plan = { ...turn.plan, logKey: undefined } // the first request answers for the turn
+      if (result.usage) await servedAs($, logKey, rewritesModel ? model : e.model, result.usage.model)
+    }
     if (rewritesModel && result.usage && !sameModel(result.usage.model, model)) {
       turn.plan = { ...turn.plan, model: undefined }
       await drop($, model, `${label(result.usage.model)} answered`)
@@ -342,10 +349,18 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   const chosen = current(r)
   const effort =
     r.effortPinned || (turn.command && (changed || !baseline)) ? undefined : effortFor(chosen ?? model, r.effort)
+  let logKey: string | undefined
   if (asked && r.last) {
     const auto = mode === 'auto'
     r.last.sent = { model: auto && chosen ? chosen : model, effort: auto && effort ? effort : rawEffort ?? null }
-    await $.store.set(`log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`, { ...r.last, session: id })
+    const why = [
+      ...(auto ? [] : ['shadow']),
+      ...(r.pin ? ['pin'] : r.userModel ? ['/model'] : []),
+      ...(r.effortPinned ? ['effort pinned'] : []),
+    ]
+    if (why.length > 0) r.last.why = why
+    logKey = `log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`
+    await $.store.set(logKey, { ...r.last, session: id })
     await trim($, 'log:', KEEP)
   }
   await save($, id, r)
@@ -361,7 +376,7 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   const head = mode === 'auto' ? 'jcmr' : `jcmr(${mode})`
   $.ui.status(`${head} ▸ ${label(shown)}·${effort ?? rawEffort ?? '-'}${notes.map(n => ` · ${n}`).join('')}`)
 
-  return { apply: mode === 'auto', model: chosen, effort }
+  return { apply: mode === 'auto', model: chosen, effort, logKey }
 }
 
 // The model the session runs on: a pin, else the first turn's choice unless
@@ -383,6 +398,20 @@ async function drop($: EngineInterface, model: string, answered: string) {
   $.ui.status(`jcmr: ${label(model)} was not used (${answered}); not switching to it again`)
 }
 
+// The API answered as another model than the one the request named: say so
+// in that turn's log line and in /jcmr.
+async function servedAs($: EngineInterface, logKey: string, sent: string, answered: string) {
+  if (sameModel(answered, sent)) return
+  const d = (await $.store.get(logKey)) as (Decision & { session: string }) | undefined
+  if (!d) return
+  await $.store.set(logKey, { ...d, served: answered })
+  const [id, r] = await record($)
+  if (r.last?.at === d.at) {
+    r.last.served = answered
+    await save($, id, r)
+  }
+}
+
 // "/review x" as typed starts a turn naming "/review", or "/plugin:review"
 // once the engine resolves a short name.
 function typedCommand(typed: string, name: string): boolean {
@@ -401,6 +430,7 @@ async function showMode($: EngineInterface, ctx: Ctx) {
 
 const pct = (p: number) => p.toFixed(2)
 const sentLabel = (sent: NonNullable<Decision['sent']>) => `${label(sent.model)}·${sent.effort ?? '-'}`
+const notesOf = (d: Decision) => [...(d.why ?? []), ...(d.served ? [`served ${label(d.served)}`] : [])].map(n => ` · ${n}`).join('')
 
 function report(r: SessionRecord, defaultMode: Mode): string {
   const dropped = (m: string) => (r.badModels?.includes(m) ? '; not served, no longer asked for' : '')
@@ -429,7 +459,7 @@ function report(r: SessionRecord, defaultMode: Mode): string {
     if (s?.escalate !== undefined) parts.push(`complaint ${pct(s.escalate)}`)
     if (s?.highStakes !== undefined) parts.push(`high stakes ${pct(s.highStakes)}`)
     lines.push(`last turn: ${parts.join(' · ') || 'no answer'}${last.error ? ` (Jev ${last.error})` : ''}`)
-    if (last.sent) lines.push(`sent: ${sentLabel(last.sent)}`)
+    if (last.sent) lines.push(`sent: ${sentLabel(last.sent)}${notesOf(last)}`)
   }
   return lines.join('\n')
 }
@@ -443,8 +473,10 @@ async function logText($: EngineInterface, n: number): Promise<string> {
     const t = new Date(d.at)
     const when = `${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`
     const flags = `${d.first ? '  first' : ''}${d.error ? `  Jev ${d.error}` : ''}`
-    const sent = d.sent ? `  sent ${sentLabel(d.sent)}` : ''
-    lines.push(`${when}  ${d.mode.padEnd(6)} ${d.model ? label(d.model) : 'unchanged'}·${d.effort ?? '-'}${sent}${flags}  "${d.prompt.slice(0, 60)}"`)
+    const jev = `${label(d.model ?? d.sent?.model)}·${d.effort ?? '-'}`
+    const shown = d.sent ? sentLabel(d.sent) : jev
+    const other = shown === jev ? '' : `  jev ${jev}`
+    lines.push(`${when}  ${d.mode.padEnd(6)} ${shown}${other}${notesOf(d)}${flags}  "${d.prompt.slice(0, 60)}"`)
   }
   return lines.length > 0 ? lines.join('\n') : 'jcmr: no decisions logged yet.'
 }
