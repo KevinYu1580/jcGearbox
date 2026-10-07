@@ -28,12 +28,14 @@ On the first prompt you type in a session, Jev is asked which tier the task need
 
 | Tier | For | Default model |
 |---|---|---|
-| `low` | Lookups, explanations, renames, formatting, running a command, one-line edits | `sonnet` |
-| `balanced` | A typical feature or bug fix in one module, writing tests, a single-file refactor | `sonnet` |
-| `strong` | Cross-module design, hard debugging (concurrency, performance, memory), architecture, security, unclear requirements | `opus` |
-| `long` | Hours of autonomous work, repo-wide migrations or audits | off (set `fable` to enable) |
+| `low` | Simple, high-volume or latency-sensitive work: lookups, explanations, renames, formatting, running a command, one-line edits | `haiku` |
+| `balanced` | Everyday coding, data analysis, content creation and agentic tool use: a typical feature or bug fix in one module, writing tests, a single-file refactor | `sonnet` |
+| `strong` | Complex agentic coding and systems work: large refactors, cross-module design, hard debugging (concurrency, performance, memory), architecture, security, unclear requirements, multi-hour autonomous coding | `opus` |
+| `long` | The highest capability: agent sessions that run for hours, multistep deep research, analysis carried through to a finished document or deck, repo-wide migrations or audits | off (set `fable` to enable) |
 
-Tiers on the same model add their probabilities together, so with the defaults the question is really Sonnet or Opus. If the tiers you've set map to fewer than two different models, there is nothing to choose and Jev isn't asked about the tier. The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise the session stays on the model you picked. A tie goes to the stronger model.
+The tiers follow the use cases in Anthropic's [model selection matrix](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model#model-selection-matrix) (checked 2026-10-07): Haiku 4.5 for the lowest latency and price, Sonnet 5.5 for everyday coding, Opus 5.5 for complex agentic coding, Fable 5.1 for the highest capability.
+
+Tiers on the same model add their probabilities together, so with the defaults the question is Haiku, Sonnet or Opus. If the tiers you've set map to fewer than two different models, there is nothing to choose and Jev isn't asked about the tier. The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise the session stays on the model you picked. A tie goes to the stronger model.
 
 That choice holds for the rest of the session, because switching models halfway would throw away the prompt cache. The mod switches on its own only when the API didn't answer with the model it asked for (see [Status line](#status-line)); your own `/jcmr pin` and `/jcmr auto` switch it too. A new session, `/clear` or a fork decides again; `--resume` and compaction keep the choice, although the compaction request itself runs on the model you picked (see [Limitations](#limitations)).
 
@@ -76,7 +78,7 @@ flowchart TD
     F -->|"Yes"| U["One level up"]
     F -->|"No"| R{"Could a mistake do<br/>hard-to-undo damage?"}
     U --> R
-    R -->|"Yes"| X["At least xhigh"]
+    R -->|"Yes"| X["At least high"]
     R -->|"No"| M["Keep it between<br/>min_effort and max_effort"]
     X --> M
     M --> E(["This prompt's effort"])
@@ -84,9 +86,9 @@ flowchart TD
 
 In words:
 
-1. Start from Jev's effort score, mapped to `low`, `medium`, `high`, `xhigh` or `max`. If the prompt only continues the last task ("ok", "go ahead", a short answer), keep the last effort instead.
+1. Start from Jev's effort score, mapped to `low`, `medium`, `high`, `xhigh` or `max`. Jev is asked which of Anthropic's [effort levels](https://platform.claude.com/docs/en/build-with-claude/effort#effort-levels) the work calls for: `low` for simple, scoped tasks, `medium` for a balance of speed and cost, `high` for complex reasoning and difficult coding, `xhigh` for long-horizon work (over 30 minutes), `max` for the deepest reasoning. If the prompt only continues the last task ("ok", "go ahead", a short answer), keep the last effort instead.
 2. If you say the last attempt was wrong or failed, go up one level.
-3. If a mistake could do damage that is hard to undo (production, deleting data, migrations, auth, money, force-push), use at least `xhigh`.
+3. If a mistake could do damage that is hard to undo (production, deleting data, migrations, auth, money, force-push), use at least `high`. `xhigh` is left to long-running work.
 4. Keep it between `min_effort` and `max_effort`. `max_effort` is applied last, so if the two conflict, or the risky rule asks for more than `max_effort`, `max_effort` wins.
 
 Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability, and each counts only above 0.7 (`signal_threshold`). If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
@@ -98,7 +100,7 @@ Examples from real sessions (October 2026, prompts translated from Chinese):
 | "Analyse plan() in hooks/register.ts for concurrency problems; don't change any files" | effort score 2.62 | `xhigh` |
 | "OK, go on" (right after the row above) | continuation 0.95 | keeps `xhigh` |
 | "No, you missed the turn.complete part, check again" | failed 0.97, effort score 0.81 (`medium`) | one level up: `high` |
-| "What are the risks of force-pushing main back to the first commit?" | risky 0.93, effort score 1.70 (`high`) | at least `xhigh` |
+| "What are the risks of force-pushing main back to the first commit?" | risky 0.93, effort score 1.70 (`high`) | at least `high` |
 
 Prompts you didn't type, such as background-task notifications, scheduled prompts and messages from other sessions, never go to Jev and keep the current model and effort. So does a prompt that another plugin rewrote before its turn started. Subagents are left alone.
 
@@ -166,7 +168,7 @@ In the `/plugin configure` menu, `default_mode`, `min_effort` and `max_effort` a
 |---|---|---|
 | `api_key` | empty | TypeSafe key. Falls back to `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | Mode for new sessions: `shadow`, `auto` or `off` |
-| `low_model`, `balanced_model`, `strong_model` | `sonnet`, `sonnet`, `opus` | An alias (`sonnet`, `opus`, `haiku`, `fable`) or a full model id; `off` turns the tier off |
+| `low_model`, `balanced_model`, `strong_model` | `haiku`, `sonnet`, `opus` | An alias (`sonnet`, `opus`, `haiku`, `fable`) or a full model id; `off` turns the tier off |
 | `long_model` | off | Set `fable` (or another alias or a full id) to turn the tier on |
 | `tier_min_probability` | 0.6 | Probability the winning model needs before the session's model changes |
 | `signal_threshold` | 0.7 | Probability above which a continuation, a failed attempt or a risky task counts; one threshold for all three |

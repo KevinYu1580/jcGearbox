@@ -28,12 +28,14 @@ session 裡你送出的第一個 prompt，會請 Jev 判斷任務需要哪個 ti
 
 | tier | 適用 | 預設 model |
 |---|---|---|
-| `low` | 查資料、解釋、改名、格式化、執行指令、一行修改 | `sonnet` |
-| `balanced` | 單一模組內的一般功能或 bug 修正、寫測試、單一檔案重構 | `sonnet` |
-| `strong` | 跨模組設計、困難除錯（並行、效能、記憶體）、架構決策、資安、需求不明確 | `opus` |
-| `long` | 數小時的自主工作、整個 repo 的遷移或稽核 | 停用（填 `fable` 啟用） |
+| `low` | 簡單、大量或要求低延遲的工作：查資料、解釋、改名、格式化、執行指令、一行修改 | `haiku` |
+| `balanced` | 日常 coding、資料分析、內容生成、agentic 工具使用：單一模組內的一般功能或 bug 修正、寫測試、單一檔案重構 | `sonnet` |
+| `strong` | 複雜的 agentic coding 與系統工程：大型重構、跨模組設計、困難除錯（並行、效能、記憶體）、架構決策、資安、需求不明確、數小時的自主 coding | `opus` |
+| `long` | 最高能力：跑數小時的 agent session、多步驟深度研究、做到完整文件或簡報的分析、整個 repo 的遷移或稽核 | 停用（填 `fable` 啟用） |
 
-幾個 tier 對應到同一個 model 時，機率會加總，所以照預設設定，其實就是在 Sonnet 和 Opus 之間選。你設定的 tier 如果對應不到兩個以上不同的 model，就沒得選，也不會問 Jev tier 題。勝出的 model 機率要有 0.6（`tier_min_probability`）才會換，不到就維持你選的 model；平手時選較強的。
+tier 依照 Anthropic 官方 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)的使用情境（2026-10-07 查閱）：Haiku 4.5 給最低延遲與價格，Sonnet 5.5 給日常 coding，Opus 5.5 給複雜 agentic coding，Fable 5.1 給最高能力。
+
+幾個 tier 對應到同一個 model 時，機率會加總，所以照預設設定，是在 Haiku、Sonnet 和 Opus 之間選。你設定的 tier 如果對應不到兩個以上不同的 model，就沒得選，也不會問 Jev tier 題。勝出的 model 機率要有 0.6（`tier_min_probability`）才會換，不到就維持你選的 model；平手時選較強的。
 
 這個選擇會維持到 session 結束，因為中途換 model 會讓 prompt cache 失效。mod 只有在 API 沒用它要求的 model 回應時才會自己換回去（見[狀態列](#狀態列)）；你自己下的 `/jcmr pin`、`/jcmr auto` 也會換。新 session、`/clear` 或 fork 會重新選，`--resume` 和對話壓縮都沿用原本的選擇，不過壓縮請求本身仍用你選的 model（見[已知限制](#已知限制)）。
 
@@ -76,7 +78,7 @@ flowchart TD
     F -->|"是"| U["升一級"]
     F -->|"否"| R{"出錯會造成<br/>難以挽回的損害？"}
     U --> R
-    R -->|"是"| X["至少 xhigh"]
+    R -->|"是"| X["至少 high"]
     R -->|"否"| M["限制在 min_effort<br/>和 max_effort 之間"]
     X --> M
     M --> E(["這個 prompt 的 effort"])
@@ -84,9 +86,9 @@ flowchart TD
 
 文字版：
 
-1. 從 Jev 的 effort 分數出發，對應到 `low`、`medium`、`high`、`xhigh` 或 `max`。如果只是接續上一件事（「好」、「繼續」、簡短回答），改用上一回合的 effort。
+1. 從 Jev 的 effort 分數出發，對應到 `low`、`medium`、`high`、`xhigh` 或 `max`。Jev 被問的是：這個工作屬於官方 [effort 等級](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)的哪一級：`low` 簡單、範圍小的任務，`medium` 速度與成本的平衡，`high` 複雜推理與困難 coding，`xhigh` 長時間（超過 30 分鐘）的工作，`max` 最深度的推理。如果只是接續上一件事（「好」、「繼續」、簡短回答），改用上一回合的 effort。
 2. 你說上次做錯或失敗了，就升一級。
-3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `xhigh`。
+3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `high`。`xhigh` 留給長時間的工作。
 4. 最後限制在 `min_effort` 和 `max_effort` 之間。`max_effort` 最後套用，所以兩者衝突，或「有風險」要求的等級超過 `max_effort` 時，以 `max_effort` 為準。
 
 「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率，超過 0.7（`signal_threshold`）才算數。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
@@ -98,7 +100,7 @@ flowchart TD
 | 「分析 hooks/register.ts 的 plan() 有沒有並行問題，不要改任何檔案」 | effort 分數 2.62 | `xhigh` |
 | 「好，繼續」（緊接在上一列之後） | 接續 0.95 | 沿用 `xhigh` |
 | 「不對，你漏看了 turn.complete 那段，重新檢查一次」 | 上次失敗 0.97，effort 分數 0.81（`medium`） | 升一級：`high` |
-| 「如果要把 main 分支 force-push 回第一個 commit，風險是什麼？」 | 有風險 0.93，effort 分數 1.70（`high`） | 至少 `xhigh` |
+| 「如果要把 main 分支 force-push 回第一個 commit，風險是什麼？」 | 有風險 0.93，effort 分數 1.70（`high`） | 至少 `high` |
 
 不是你打的 prompt，例如背景任務通知、排程 prompt、其他 session 傳來的訊息，不會送給 Jev，沿用目前的 model 和 effort。你的 prompt 如果在回合開始前被其他 plugin 改寫，也比照處理。subagent 的 model 和 effort 一律不動。
 
@@ -166,7 +168,7 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 |---|---|---|
 | `api_key` | 空 | TypeSafe key。沒填就讀 `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | 新 session 的模式：`shadow`、`auto` 或 `off` |
-| `low_model`、`balanced_model`、`strong_model` | `sonnet`、`sonnet`、`opus` | 別名（`sonnet`、`opus`、`haiku`、`fable`）或完整 model ID；填 `off` 停用該 tier |
+| `low_model`、`balanced_model`、`strong_model` | `haiku`、`sonnet`、`opus` | 別名（`sonnet`、`opus`、`haiku`、`fable`）或完整 model ID；填 `off` 停用該 tier |
 | `long_model` | 停用 | 填 `fable`（或其他別名、完整 ID）才啟用 |
 | `tier_min_probability` | 0.6 | 勝出的 model 要有多少機率，才換掉 session 的 model |
 | `signal_threshold` | 0.7 | 「接續」、「上次失敗」、「有風險」的機率要超過多少才算；三題共用這個門檻 |
