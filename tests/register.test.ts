@@ -90,13 +90,94 @@ describe('auto mode', () => {
   })
 })
 
+describe("Anthropic's model selection matrix", () => {
+  test('long, multi-hour work moves the session to Fable 5.1 by default', AUTO, async ($, on) => {
+    const LONG = {
+      answers: {
+        tier: { type: 'choice', choice: 'long', probabilities: { low: 0.02, balanced: 0.08, strong: 0.2, long: 0.7 }, confidence: 0.6 },
+        effort: { type: 'score', score: 3.1 },
+        high_stakes: { type: 'noul', noul: 0.1 },
+      },
+    }
+    const w = world(on, { reply: LONG })
+    await start($)
+    await turn($, 'migrate the whole monorepo to the new build system, end to end', 't1')
+    expect(w.asked[0].questions.tier.criteria.long).toBeDefined()
+    expect(w.steps).toEqual([{ model: 'claude-fable-5-1', effort: 'xhigh' }])
+  })
+})
+
+describe('ultracode', () => {
+  test('a turn the person typed ultracode in is routed as usual and says so', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ULTRACODE audit every module for races', 't2')
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high · ultracode')
+    expect((await command($, 'log 1')).text).toContain('opus-5-5·high · ultracode')
+    await turn($, 'now fix the first one', 't3')
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
+  })
+
+  test("the word is the keyword only where Claude Code takes it as one", AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    const prompts = [
+      'rename ultracoder to coder',
+      'fix the `ultracode` note in the README',
+      'what is ultracode?',
+      'see "ultracode" in the docs',
+      'drop the ultracode-mode flag',
+      'read docs/ultracode.md',
+      '/tmp/build.log ultracode this',
+    ]
+    for (const [i, text] of prompts.entries()) {
+      await turn($, text, `t${i}`)
+      expect(w.status.at(-1)).not.toContain('ultracode')
+    }
+  })
+
+  test('a turn the person did not type is never an ultracode turn', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ultracode audit everything', 't2', { origin: 'task-notification' })
+    expect(w.status.at(-1)).not.toContain('ultracode')
+  })
+})
+
+describe('the status line shows what was sent', () => {
+  test('a model that takes no effort shows none, whatever the engine had set', AUTO, async ($, on) => {
+    const LOW = {
+      answers: {
+        tier: { type: 'choice', choice: 'low', probabilities: { low: 0.8, balanced: 0.15, strong: 0.05 }, confidence: 0.7 },
+        effort: { type: 'score', score: 0.2 },
+        high_stakes: { type: 'noul', noul: 0.05 },
+      },
+    }
+    const w = world(on, { reply: LOW })
+    await start($)
+    await turn($, 'what does git stash do', 't1')
+    expect(w.status.at(-1)).toBe('jcmr ▸ haiku-4-5-20251001·-')
+    expect((await command($, 'log 1')).text).toContain('haiku-4-5-20251001·-  jev haiku-4-5-20251001·low')
+  })
+
+  test("a request without effort shows the model's default", async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'], effort: null })
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·medium · jev opus-5-5·high')
+  })
+})
+
 describe('shadow mode', () => {
   test('judges and shows, rewrites nothing', async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high')
   })
 
   test('/jcmr and its log show what was sent, not what Jev picked', async ($, on) => {
@@ -135,7 +216,7 @@ describe('shadow mode', () => {
       { model: 'claude-opus-5-5', effort: 'high' },
       { model: 'claude-opus-5-5', effort: 'high' },
     ])
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·low')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high · jev sonnet-5-5·low')
   })
 })
 
@@ -266,7 +347,7 @@ describe('/jcmr', () => {
     expect((await command($, 'shadow')).text).toBe('jcmr: shadow for this session.')
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high')
     w.session = 'session-2'
     await turn($, 'redesign the sync engine', 't2')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })

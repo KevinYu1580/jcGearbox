@@ -39,6 +39,7 @@ export const CATALOG = {
     config: {
       models: [
         { id: 'claude-opus-5-5', short_name: 'Opus', section: 'main', min_claude_code_version: '2.1.280' },
+        { id: 'claude-fable-5-1', short_name: 'Fable', section: 'main', min_claude_code_version: null },
         { id: 'claude-sonnet-5-5', short_name: 'Sonnet', section: 'main', min_claude_code_version: null },
         { id: 'claude-haiku-4-5-20251001', short_name: 'Haiku', section: 'main', min_claude_code_version: null },
       ],

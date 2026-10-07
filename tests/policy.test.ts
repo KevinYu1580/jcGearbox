@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { decideEffort, effortFor, effortFromScore, pickModel } from '../hooks/policy.ts'
+import { decideEffort, defaultEffort, effortFor, effortFromScore, pickModel } from '../hooks/policy.ts'
 
 const base = { threshold: 0.7, minEffort: 'low' as const, maxEffort: 'max' as const }
 
@@ -163,5 +163,39 @@ describe('effortFor', () => {
       expect(effortFor(model, 'xhigh')).toBe('xhigh')
     }
     expect(effortFor('claude-opus-5-5', undefined)).toBeUndefined()
+  })
+
+  test('models older than Opus 4.5 and Sonnet 4.6 take no effort, on every platform', () => {
+    for (const model of [
+      'claude-sonnet-4-5-20250929',
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'claude-sonnet-4-20250514',
+      'claude-sonnet-4@20250514',
+      'anthropic.claude-opus-4-20250514-v1:0',
+      'claude-opus-4-1-20250805',
+      'claude-3-7-sonnet-20250219',
+    ]) {
+      expect(effortFor(model, 'high')).toBeUndefined()
+    }
+  })
+
+  test('Mythos Preview takes max but not xhigh; Opus 4.7, 4.8 and 5 take both', () => {
+    expect(effortFor('claude-mythos-preview', 'xhigh')).toBe('high')
+    expect(effortFor('claude-mythos-preview', 'max')).toBe('max')
+    for (const model of ['claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-5', 'claude-mythos-5-1']) {
+      expect(effortFor(model, 'xhigh')).toBe('xhigh')
+      expect(effortFor(model, 'max')).toBe('max')
+    }
+  })
+})
+
+describe('defaultEffort', () => {
+  test('medium on Opus 5.5, high on the rest, none where effort is not taken', () => {
+    expect(defaultEffort('claude-opus-5-5')).toBe('medium')
+    expect(defaultEffort('claude-opus-5-5[1m]')).toBe('medium')
+    expect(defaultEffort('claude-sonnet-5-5')).toBe('high')
+    expect(defaultEffort('claude-fable-5-1')).toBe('high')
+    expect(defaultEffort('claude-opus-5')).toBe('high')
+    expect(defaultEffort('claude-haiku-4-5-20251001')).toBeUndefined()
   })
 })

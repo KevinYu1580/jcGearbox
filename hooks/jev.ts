@@ -9,12 +9,12 @@ const PROMPT_CHARS = 6000
 const CONTEXT_CHARS = 1000
 
 const TIER_CRITERIA: Record<Tier, string> = {
-  low: 'Simple, high-volume or latency-sensitive work: lookup, explanation, rename, formatting, running a command, a one-line edit, a sub-agent style task',
+  low: 'Lowest latency and price: real-time or high-volume work, cost-sensitive tasks and sub-agent style tasks, such as a lookup, an explanation, a rename, formatting, running a command or a one-line edit',
   balanced:
-    'Everyday coding, data analysis, content creation and agentic tool use: a typical feature or bug fix within one module, writing tests, a single-file refactor',
+    'Speed and capability for everyday coding, agents and enterprise work: code generation, data analysis, content creation, visual understanding and agentic tool use, such as a typical feature or bug fix within one module, writing tests or a single-file refactor',
   strong:
-    'Complex agentic coding and systems work: large-scale refactoring, cross-module design, hard debugging (concurrency, performance, memory), architecture decisions, security, ambiguous requirements, multi-hour autonomous coding',
-  long: 'The highest capability: agent sessions that run for hours, multistep deep research, analysis carried through to a finished document, spreadsheet or deck, a repo-wide migration or audit',
+    'Complex agentic coding and enterprise work: autonomous coding agents running for hours, large-scale refactoring, complex systems engineering, vision-heavy workflows and computer use, such as cross-module design, hard debugging (concurrency, performance, memory), architecture or security decisions',
+  long: 'The highest capability available: agent sessions that run for hours, multistep deep research, and analysis carried through to a finished document, spreadsheet or deck',
 }
 
 const QUESTIONS = {

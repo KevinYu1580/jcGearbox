@@ -183,7 +183,7 @@ describe('status line', () => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high')
     await command($, 'auto')
     expect(w.status.at(-1)).toBe('jcmr')
   })

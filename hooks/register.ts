@@ -4,7 +4,7 @@ import { JEV_URL, buildRequest, clip, parseAnswers } from './jev.ts'
 import type { JevRequest, JevResult } from './jev.ts'
 import { newestCatalogFile, resolveModel, surfaceOf, versionAtLeast } from './models.ts'
 import type { Resolved } from './models.ts'
-import { EFFORTS, TIERS, decideEffort, effortFor, isEffort, pickModel } from './policy.ts'
+import { EFFORTS, TIERS, decideEffort, defaultEffort, effortFor, isEffort, pickModel } from './policy.ts'
 import type { Effort, Tier } from './policy.ts'
 
 const MIN_VERSION = '2.1.286'
@@ -31,7 +31,7 @@ type Decision = {
   model?: string
   effort?: Effort
   sent?: { model: string; effort: string | number | null } // what the request carried: ours in auto, the engine's own otherwise
-  why?: string[] // what made it differ from Jev's pick: shadow, pin, /model, effort pinned
+  why?: string[] // why it differs from Jev's pick (shadow, pin, /model, effort pinned), and ultracode
   served?: string // the model the API answered as, when it was not the one sent
 }
 
@@ -57,6 +57,7 @@ type Turn = {
   isUser: boolean
   text: string
   command?: boolean // a slash command's turn
+  ultracode?: boolean // the person typed the ultracode keyword: Claude Code may run workflows this turn
   baseModel?: string
   plan?: Plan
   unanswered?: string // the model the last rewritten request named, when it got no response
@@ -116,7 +117,9 @@ export const register: Register = (on, options) => {
     const command = /<command-name>(\/[^<]*)<\/command-name>/.exec(text)?.[1]
     const i = submitted.findLastIndex(s => s.text === text || (command !== undefined && typedCommand(s.text, command)))
     const hit = i >= 0 ? submitted.splice(i, 1)[0] : undefined
-    turns.set(e.turnId, { isUser: hit?.isUser ?? false, text: hit?.text ?? text, command: command !== undefined })
+    const isUser = hit?.isUser ?? false
+    const ultracode = isUser && typedUltracode(hit?.text ?? '')
+    turns.set(e.turnId, { isUser, text: hit?.text ?? text, command: command !== undefined, ultracode })
     return next(e)
   })
 
@@ -349,15 +352,20 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   const chosen = current(r)
   const effort =
     r.effortPinned || (turn.command && (changed || !baseline)) ? undefined : effortFor(chosen ?? model, r.effort)
+  // The ultracode keyword only lets Claude Code run workflows this turn; the
+  // model and effort are routed as on any other turn.
+  const auto = mode === 'auto'
+  const sentModel = auto && chosen ? chosen : model
+  const sent = { model: sentModel, effort: takesEffort(sentModel) ? (auto && effort ? effort : rawEffort ?? null) : null }
+  const why = [
+    ...(auto ? [] : ['shadow']),
+    ...(turn.ultracode ? ['ultracode'] : []),
+    ...(r.pin ? ['pin'] : r.userModel ? ['/model'] : []),
+    ...(r.effortPinned ? ['effort pinned'] : []),
+  ]
   let logKey: string | undefined
   if (asked && r.last) {
-    const auto = mode === 'auto'
-    r.last.sent = { model: auto && chosen ? chosen : model, effort: auto && effort ? effort : rawEffort ?? null }
-    const why = [
-      ...(auto ? [] : ['shadow']),
-      ...(r.pin ? ['pin'] : r.userModel ? ['/model'] : []),
-      ...(r.effortPinned ? ['effort pinned'] : []),
-    ]
+    r.last.sent = sent
     if (why.length > 0) r.last.why = why
     logKey = `log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`
     await $.store.set(logKey, { ...r.last, session: id })
@@ -366,7 +374,10 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   await save($, id, r)
 
   const shown = chosen ?? model
+  const pick = `${label(shown)}·${(takesEffort(shown) ? (effort ?? rawEffort) : undefined) ?? defaultEffort(shown) ?? '-'}`
   const notes: string[] = []
+  if (pick !== sentLabel(sent)) notes.push(`jev ${pick}`)
+  if (turn.ultracode) notes.push('ultracode')
   if (r.pin || r.userModel) notes.push('model pinned')
   if (r.effortPinned) notes.push('effort pinned')
   const atCeiling = isEffort(before) && EFFORTS.indexOf(before) >= EFFORTS.indexOf(opt.maxEffort)
@@ -374,9 +385,9 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
   if (Object.values(tiers).some(t => t?.source === 'builtin')) notes.push('built-in model table')
   if (asked?.error) notes.push(`Jev ${asked.error}`)
   const head = mode === 'auto' ? 'jcmr' : `jcmr(${mode})`
-  $.ui.status(`${head} ▸ ${label(shown)}·${effort ?? rawEffort ?? '-'}${notes.map(n => ` · ${n}`).join('')}`)
+  $.ui.status(`${head} ▸ ${sentLabel(sent)}${notes.map(n => ` · ${n}`).join('')}`)
 
-  return { apply: mode === 'auto', model: chosen, effort, logKey }
+  return { apply: auto, model: chosen, effort, logKey }
 }
 
 // The model the session runs on: a pin, else the first turn's choice unless
@@ -412,6 +423,44 @@ async function servedAs($: EngineInterface, logKey: string, sent: string, answer
   }
 }
 
+const takesEffort = (model: string) => defaultEffort(model) !== undefined
+
+// Claude Code's own test for a typed keyword: not in a slash command, not
+// inside quotes or brackets, not part of a path, a flag or a question about it.
+const CLOSERS: Record<string, string> = { '`': '`', '"': '"', '<': '>', '{': '}', '[': ']', '(': ')', "'": "'" }
+function typedUltracode(text: string): boolean {
+  if (text.startsWith('/')) return false
+  const word = (c: string | undefined) => !!c && /[\p{L}\p{N}_]/u.test(c)
+  const spans: [number, number][] = []
+  let open: string | null = null
+  let from = 0
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i] as string
+    if (open) {
+      if (open === '[' && c === '[') from = i
+      else if (c === CLOSERS[open] && !(open === "'" && word(text[i + 1]))) {
+        spans.push([from, i + 1])
+        open = null
+      }
+    } else if ((c === '<' && /[a-zA-Z/]/.test(text[i + 1] ?? '')) || (c === "'" && !word(text[i - 1])) || (c !== '<' && c !== "'" && c in CLOSERS)) {
+      open = c
+      from = i
+    }
+  }
+  for (const m of text.matchAll(/\bultracode\b/gi)) {
+    const at = m.index
+    const end = at + m[0].length
+    const before = text[at - 1]
+    const after = text[end]
+    if (spans.some(([a, b]) => at >= a && at < b)) continue
+    if (before === '/' || before === '\\' || before === '-') continue
+    if (after === '/' || after === '\\' || after === '-' || after === '?') continue
+    if (after === '.' && word(text[end + 1])) continue
+    return true
+  }
+  return false
+}
+
 // "/review x" as typed starts a turn naming "/review", or "/plugin:review"
 // once the engine resolves a short name.
 function typedCommand(typed: string, name: string): boolean {
@@ -429,7 +478,8 @@ async function showMode($: EngineInterface, ctx: Ctx) {
 }
 
 const pct = (p: number) => p.toFixed(2)
-const sentLabel = (sent: NonNullable<Decision['sent']>) => `${label(sent.model)}·${sent.effort ?? '-'}`
+// No effort on the request means the model's default, which is what runs.
+const sentLabel = (sent: NonNullable<Decision['sent']>) => `${label(sent.model)}·${sent.effort ?? defaultEffort(sent.model) ?? '-'}`
 const notesOf = (d: Decision) => [...(d.why ?? []), ...(d.served ? [`served ${label(d.served)}`] : [])].map(n => ` · ${n}`).join('')
 
 function report(r: SessionRecord, defaultMode: Mode): string {
