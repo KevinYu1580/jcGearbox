@@ -2,9 +2,9 @@
 
 English · [繁體中文](README.zh-TW.md)
 
-Claude Code leaves the model and the effort to you. This mod sets them from how hard the task looks, as judged by [TypeSafe's Jev](https://typesafe.ai). The first prompt of a session picks the model: Sonnet for everyday work, Opus for hard work. Every prompt you type, the first one included, picks the effort: lower for a quick question, higher when you say the last attempt failed or the task can break something.
+Claude Code leaves the model and the effort to you. This mod sets them from how hard the task looks, as judged by [TypeSafe's Jev](https://typesafe.ai). The first prompt of a session picks the model: Haiku for quick work, Sonnet for everyday work, Opus for hard work, Fable for work that runs for hours. Every prompt you type, the first one included, picks the effort: lower for a quick question, higher when you say the last attempt failed or the task can break something.
 
-A mod is a Claude Code plugin made of function hooks. This one starts in shadow mode: it judges every prompt and shows its pick in the status line, but sends your requests unchanged. Turn on `auto` once `/jcmr log` has shown you enough of its picks to trust them, because the evidence that Jev judges difficulty well is thin (see [Limitations](#limitations)).
+A mod is a Claude Code plugin made of function hooks. This one starts in shadow mode: it judges every prompt and shows its pick in the status line, but sends your requests unchanged. The model tiers and effort levels follow Anthropic's official [model selection matrix](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model#model-selection-matrix) and [effort levels](https://platform.claude.com/docs/en/build-with-claude/effort#effort-levels). Turn on `auto` once `/jcmr log` has shown you enough of its picks to trust them, because the evidence that Jev judges difficulty well is thin (see [Limitations](#limitations)).
 
 ## Requirements
 
@@ -28,14 +28,14 @@ On the first prompt you type in a session, Jev is asked which tier the task need
 
 | Tier | For | Default model |
 |---|---|---|
-| `low` | Simple, high-volume or latency-sensitive work: lookups, explanations, renames, formatting, running a command, one-line edits | `haiku` |
-| `balanced` | Everyday coding, data analysis, content creation and agentic tool use: a typical feature or bug fix in one module, writing tests, a single-file refactor | `sonnet` |
-| `strong` | Complex agentic coding and systems work: large refactors, cross-module design, hard debugging (concurrency, performance, memory), architecture, security, unclear requirements, multi-hour autonomous coding | `opus` |
-| `long` | The highest capability: agent sessions that run for hours, multistep deep research, analysis carried through to a finished document or deck, repo-wide migrations or audits | off (set `fable` to enable) |
+| `low` | Lowest latency and price: real-time or high-volume work, cost-sensitive tasks and sub-agent style tasks such as lookups, explanations, renames, formatting, running a command, one-line edits | `haiku` |
+| `balanced` | Everyday coding, agents and enterprise work: code generation, data analysis, content creation, visual understanding and agentic tool use, such as a typical feature or bug fix in one module, writing tests, a single-file refactor | `sonnet` |
+| `strong` | Complex agentic coding and enterprise work: autonomous coding agents running for hours, large refactors, complex systems engineering, vision-heavy workflows and computer use, such as cross-module design, hard debugging (concurrency, performance, memory), architecture or security decisions | `opus` |
+| `long` | The highest capability available: agent sessions that run for hours, multistep deep research, analysis carried through to a finished document, spreadsheet or deck | `fable` |
 
 The tiers follow the use cases in Anthropic's [model selection matrix](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model#model-selection-matrix) (checked 2026-10-07): Haiku 4.5 for the lowest latency and price, Sonnet 5.5 for everyday coding, Opus 5.5 for complex agentic coding, Fable 5.1 for the highest capability.
 
-Tiers on the same model add their probabilities together, so with the defaults the question is Haiku, Sonnet or Opus. If the tiers you've set map to fewer than two different models, there is nothing to choose and Jev isn't asked about the tier. The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise the session stays on the model you picked. A tie goes to the stronger model.
+Tiers on the same model add their probabilities together, so with the defaults the question is Haiku, Sonnet, Opus or Fable. Fable 5.1 costs the most, and some accounts can't use it (zero data retention, for one); set `long_model` to `off` if a session shouldn't move to it. If the API refuses it, the first prompt fails once and the mod stops asking for Fable in that session (see [Status line](#status-line)). If the tiers you've set map to fewer than two different models, there is nothing to choose and Jev isn't asked about the tier. The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise the session stays on the model you picked. A tie goes to the stronger model.
 
 That choice holds for the rest of the session, because switching models halfway would throw away the prompt cache. The mod switches on its own only when the API didn't answer with the model it asked for (see [Status line](#status-line)); your own `/jcmr pin` and `/jcmr auto` switch it too. A new session, `/clear` or a fork decides again; `--resume` and compaction keep the choice, although the compaction request itself runs on the model you picked (see [Limitations](#limitations)).
 
@@ -90,6 +90,7 @@ In words:
 2. If you say the last attempt was wrong or failed, go up one level.
 3. If a mistake could do damage that is hard to undo (production, deleting data, migrations, auth, money, force-push), use at least `high`. `xhigh` is left to long-running work.
 4. Keep it between `min_effort` and `max_effort`. `max_effort` is applied last, so if the two conflict, or the risky rule asks for more than `max_effort`, `max_effort` wins.
+5. Lower it to what the model takes (see the table below).
 
 Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability, and each counts only above 0.7 (`signal_threshold`). If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
 
@@ -103,6 +104,23 @@ Examples from real sessions (October 2026, prompts translated from Chinese):
 | "What are the risks of force-pushing main back to the first commit?" | risky 0.93, effort score 1.70 (`high`) | at least `high` |
 
 Prompts you didn't type, such as background-task notifications, scheduled prompts and messages from other sessions, never go to Jev and keep the current model and effort. So does a prompt that another plugin rewrote before its turn started. Subagents are left alone.
+
+### What each model takes
+
+Anthropic's [effort table](https://platform.claude.com/docs/en/build-with-claude/effort#effort-levels) (checked 2026-10-07) decides what a request can carry. A level the model doesn't take is lowered before the request goes out:
+
+| Model | Effort it takes | With no effort sent |
+|---|---|---|
+| Opus 5.5 | `low` to `max` | `medium` |
+| Fable 5.1, Fable 5, Mythos 5.1, Mythos 5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5.5, Sonnet 5 | `low` to `max` | `high` |
+| Opus 4.6, Sonnet 4.6, Mythos Preview | `low` to `max` except `xhigh`, which becomes `high` | `high` |
+| Opus 4.5 | `low` to `high`; `xhigh` and `max` become `high` | `high` |
+| Haiku 4.5, and models older than Opus 4.5 and Sonnet 4.6 | none; no effort is sent | none |
+| A model id the mod doesn't know | every level | `high` |
+
+### Ultracode
+
+Ultracode isn't an effort level. Typing `ultracode` in a prompt, or turning it on with `/effort ultracode on`, lets Claude Code run multi-agent workflows; it changes neither the model nor the effort. So the mod never turns it on and routes an ultracode turn like any other. When you type the keyword, the status line and `/jcmr log` add `ultracode`, using Claude Code's own rule for what counts (not in a slash command, quotes, brackets or a path). A session-wide `/effort ultracode on` can't be seen by a mod, so it isn't marked.
 
 ## If Jev fails
 
@@ -130,19 +148,19 @@ Also:
 | `/jcmr` | Shows the mode, the model and effort state, Jev's scores for the last prompt, and the model and effort the last request actually carried (`sent`), with the same reasons |
 | `/jcmr auto`, `/jcmr shadow`, `/jcmr off` | Sets the mode for this session only; new sessions start in `default_mode` |
 | `/jcmr pin <model>` | Pins a model for this session. Refuses an alias it can't resolve and a model the API already didn't serve in this session |
-| `/jcmr log [n]` | Lists the last `n` decisions (default 20) across all sessions. Each line starts with the model and effort the request carried. If Jev picked something else, `jev …` follows, then a reason (`pin`, `/model`, `shadow`, `effort pinned`), and `served …` when the API answered as another model |
+| `/jcmr log [n]` | Lists the last `n` decisions (default 20) across all sessions. Each line starts with the model and effort the request carried. If Jev picked something else, `jev …` follows, then a reason (`pin`, `/model`, `shadow`, `ultracode`, `effort pinned`), and `served …` when the API answered as another model |
 
 ## Status line
 
 ```
-jcmr ▸ opus-5-5·high            auto
-jcmr(shadow) ▸ opus-5-5·high    shadow: what auto would do
+jcmr ▸ opus-5-5·high                                 auto
+jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow: what was sent, then what auto would send
 jcmr(shadow)                    after a start, /clear, /resume or /jcmr, until the next decision
 jcmr: no API key
 jcmr: needs Claude Code 2.1.286+
 ```
 
-In `auto` the short form is just `jcmr`; in `off` the line is empty. Notes follow when they apply: `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`.
+The model and effort right after `▸` are what the request carried; when it carried no effort, the model's default from the table above. `jev <model·effort>` follows when Jev's pick differs. In `auto` the short form is just `jcmr`; in `off` the line is empty. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`.
 
 If the API answers as a different model than the one requested, the mod stops asking for that model and shows `jcmr: <model> was not used (<model> answered); not switching to it again`. It does the same, with `no response` in the brackets, when a request gets no response and the turn ends in an error.
 
@@ -169,7 +187,7 @@ In the `/plugin configure` menu, `default_mode`, `min_effort` and `max_effort` a
 | `api_key` | empty | TypeSafe key. Falls back to `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | Mode for new sessions: `shadow`, `auto` or `off` |
 | `low_model`, `balanced_model`, `strong_model` | `haiku`, `sonnet`, `opus` | An alias (`sonnet`, `opus`, `haiku`, `fable`) or a full model id; `off` turns the tier off |
-| `long_model` | off | Set `fable` (or another alias or a full id) to turn the tier on |
+| `long_model` | `fable` | An alias or a full model id; `off` turns the tier off. Fable 5.1 costs the most |
 | `tier_min_probability` | 0.6 | Probability the winning model needs before the session's model changes |
 | `signal_threshold` | 0.7 | Probability above which a continuation, a failed attempt or a risky task counts; one threshold for all three |
 | `min_effort` | `low` | Lowest effort the mod sets |

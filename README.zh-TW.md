@@ -2,9 +2,9 @@
 
 [English](README.md) · 繁體中文
 
-Claude Code 的 model 和 effort 都要自己選。這個 mod 改由 [TypeSafe 的 Jev](https://typesafe.ai) 判斷任務難度來決定：session 的第一個 prompt 決定 model，平常用 Sonnet，難題用 Opus；每個 prompt（包括第一個）則決定 effort，簡單的問題調低，你說上次失敗或任務可能闖禍時調高。
+Claude Code 的 model 和 effort 都要自己選。這個 mod 改由 [TypeSafe 的 Jev](https://typesafe.ai) 判斷任務難度來決定：session 的第一個 prompt 決定 model，簡單的用 Haiku，平常用 Sonnet，難題用 Opus，要跑好幾小時的用 Fable；每個 prompt（包括第一個）則決定 effort，簡單的問題調低，你說上次失敗或任務可能闖禍時調高。
 
-mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 shadow 模式：每個 prompt 都判斷，結果顯示在狀態列，但請求原樣送出。等 `/jcmr log` 裡的判斷讓你放心了，再切到 `auto`；Jev 判斷難度準不準，目前證據很薄（見[已知限制](#已知限制)）。
+mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 shadow 模式：每個 prompt 都判斷，結果顯示在狀態列，但請求原樣送出。model tier 和 effort 等級都依照 Anthropic 官方的 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)和 [effort 等級](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)設計。等 `/jcmr log` 裡的判斷讓你放心了，再切到 `auto`；Jev 判斷難度準不準，目前證據很薄（見[已知限制](#已知限制)）。
 
 ## 需求
 
@@ -28,14 +28,14 @@ session 裡你送出的第一個 prompt，會請 Jev 判斷任務需要哪個 ti
 
 | tier | 適用 | 預設 model |
 |---|---|---|
-| `low` | 簡單、大量或要求低延遲的工作：查資料、解釋、改名、格式化、執行指令、一行修改 | `haiku` |
-| `balanced` | 日常 coding、資料分析、內容生成、agentic 工具使用：單一模組內的一般功能或 bug 修正、寫測試、單一檔案重構 | `sonnet` |
-| `strong` | 複雜的 agentic coding 與系統工程：大型重構、跨模組設計、困難除錯（並行、效能、記憶體）、架構決策、資安、需求不明確、數小時的自主 coding | `opus` |
-| `long` | 最高能力：跑數小時的 agent session、多步驟深度研究、做到完整文件或簡報的分析、整個 repo 的遷移或稽核 | 停用（填 `fable` 啟用） |
+| `low` | 最低延遲與價格：即時或大量的工作、對成本敏感的任務，以及子代理型的任務，例如查詢、解釋、改名、排版、執行指令、改一行 | `haiku` |
+| `balanced` | 日常 coding、代理與企業工作：程式碼生成、資料分析、內容創作、視覺理解、代理式工具使用，例如單一模組內的功能或 bug 修正、寫測試、單檔重構 | `sonnet` |
+| `strong` | 複雜的代理式 coding 與企業工作：持續數小時的自主 coding agent、大規模重構、複雜系統工程、大量運用視覺的工作流程、電腦使用，例如跨模組設計、困難的除錯（並行、效能、記憶體）、架構或資安決策 | `opus` |
+| `long` | 現有最高能力：持續數小時的 agent session、多步驟深度研究、一路做到完成文件、試算表或簡報的分析 | `fable` |
 
 tier 依照 Anthropic 官方 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)的使用情境（2026-10-07 查閱）：Haiku 4.5 給最低延遲與價格，Sonnet 5.5 給日常 coding，Opus 5.5 給複雜 agentic coding，Fable 5.1 給最高能力。
 
-幾個 tier 對應到同一個 model 時，機率會加總，所以照預設設定，是在 Haiku、Sonnet 和 Opus 之間選。你設定的 tier 如果對應不到兩個以上不同的 model，就沒得選，也不會問 Jev tier 題。勝出的 model 機率要有 0.6（`tier_min_probability`）才會換，不到就維持你選的 model；平手時選較強的。
+幾個 tier 對應到同一個 model 時，機率會加總，所以照預設設定，是在 Haiku、Sonnet、Opus 和 Fable 之間選。Fable 5.1 最貴，有些帳號也不能用（例如零資料保留）；不想讓 session 切到它，請把 `long_model` 設成 `off`。API 拒絕時，第一個 prompt 會失敗一次，之後這個 session 不再要求 Fable（見[狀態列](#狀態列)）。你設定的 tier 如果對應不到兩個以上不同的 model，就沒得選，也不會問 Jev tier 題。勝出的 model 機率要有 0.6（`tier_min_probability`）才會換，不到就維持你選的 model；平手時選較強的。
 
 這個選擇會維持到 session 結束，因為中途換 model 會讓 prompt cache 失效。mod 只有在 API 沒用它要求的 model 回應時才會自己換回去（見[狀態列](#狀態列)）；你自己下的 `/jcmr pin`、`/jcmr auto` 也會換。新 session、`/clear` 或 fork 會重新選，`--resume` 和對話壓縮都沿用原本的選擇，不過壓縮請求本身仍用你選的 model（見[已知限制](#已知限制)）。
 
@@ -90,6 +90,7 @@ flowchart TD
 2. 你說上次做錯或失敗了，就升一級。
 3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `high`。`xhigh` 留給長時間的工作。
 4. 最後限制在 `min_effort` 和 `max_effort` 之間。`max_effort` 最後套用，所以兩者衝突，或「有風險」要求的等級超過 `max_effort` 時，以 `max_effort` 為準。
+5. 再降到 model 能用的等級（見下表）。
 
 「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率，超過 0.7（`signal_threshold`）才算數。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
 
@@ -103,6 +104,23 @@ flowchart TD
 | 「如果要把 main 分支 force-push 回第一個 commit，風險是什麼？」 | 有風險 0.93，effort 分數 1.70（`high`） | 至少 `high` |
 
 不是你打的 prompt，例如背景任務通知、排程 prompt、其他 session 傳來的訊息，不會送給 Jev，沿用目前的 model 和 effort。你的 prompt 如果在回合開始前被其他 plugin 改寫，也比照處理。subagent 的 model 和 effort 一律不動。
+
+### 各 model 能用的 effort
+
+一個請求能帶哪個 effort，依官方 [effort 等級表](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)（2026-10-07 查閱）。model 不支援的等級，送出前會降下來：
+
+| model | 能用的 effort | 沒送 effort 時 |
+|---|---|---|
+| Opus 5.5 | `low` 到 `max` | `medium` |
+| Fable 5.1、Fable 5、Mythos 5.1、Mythos 5、Opus 5、Opus 4.8、Opus 4.7、Sonnet 5.5、Sonnet 5 | `low` 到 `max` | `high` |
+| Opus 4.6、Sonnet 4.6、Mythos Preview | `low` 到 `max`，但沒有 `xhigh`，會改成 `high` | `high` |
+| Opus 4.5 | `low` 到 `high`；`xhigh` 和 `max` 改成 `high` | `high` |
+| Haiku 4.5，以及比 Opus 4.5、Sonnet 4.6 舊的 model | 不支援，不送 effort | 無 |
+| mod 不認得的 model ID | 全部等級 | `high` |
+
+### Ultracode
+
+ultracode 不是 effort 等級。在 prompt 裡打 `ultracode`，或用 `/effort ultracode on` 開啟，只是讓 Claude Code 可以跑多 agent workflow，不會改 model，也不會改 effort。所以 mod 不會自己開啟它，ultracode 回合也照常選 model 和 effort。你打了這個關鍵字時，狀態列和 `/jcmr log` 會加註 `ultracode`；怎樣才算關鍵字，照 Claude Code 自己的規則（不在 slash command、引號、括號或路徑裡）。整個 session 用 `/effort ultracode on` 開啟的，mod 看不到，所以不會標示。
 
 ## Jev 出錯時
 
@@ -130,19 +148,19 @@ Jev 回傳錯誤，或超過 `jev_timeout_seconds`（預設 3 秒）沒回應，
 | `/jcmr` | 顯示模式、model 和 effort 的狀態，上一則 prompt 的 Jev 分數，以及上一個請求實際帶的 model 和 effort（`sent`，附同樣的原因）|
 | `/jcmr auto`、`/jcmr shadow`、`/jcmr off` | 只改這個 session 的模式；新 session 從 `default_mode` 開始 |
 | `/jcmr pin <model>` | 這個 session 固定用某個 model。對應不到 ID 的別名，或這個 session 裡 API 沒用它回應過的 model，會被拒絕 |
-| `/jcmr log [n]` | 列出最近 `n` 筆決策（預設 20），包含所有 session。每行開頭是請求實際帶的 model 和 effort。Jev 選的不同時，後面接 `jev …`，再接原因（`pin`、`/model`、`shadow`、`effort pinned`）；API 用別的 model 回應時再加 `served …` |
+| `/jcmr log [n]` | 列出最近 `n` 筆決策（預設 20），包含所有 session。每行開頭是請求實際帶的 model 和 effort。Jev 選的不同時，後面接 `jev …`，再接原因（`pin`、`/model`、`shadow`、`ultracode`、`effort pinned`）；API 用別的 model 回應時再加 `served …` |
 
 ## 狀態列
 
 ```
-jcmr ▸ opus-5-5·high            auto
-jcmr(shadow) ▸ opus-5-5·high    shadow：開 auto 的話會怎麼選
+jcmr ▸ opus-5-5·high                                 auto
+jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：先是實際送出的，再來是開 auto 會送的
 jcmr(shadow)                    啟動、/clear、/resume 或 /jcmr 之後，到下一個決策之前
 jcmr: no API key
 jcmr: needs Claude Code 2.1.286+
 ```
 
-`auto` 模式的簡短形式就是 `jcmr`；`off` 模式不顯示。視情況在後面加註：`model pinned`、`effort pinned`、`try /jcmr pin opus`、`built-in model table`、`Jev <錯誤>`。
+`▸` 後面的 model 和 effort 是請求實際帶的；請求沒帶 effort 時，顯示上表該 model 的預設值。Jev 選的不同時，後面接 `jev <model·effort>`。`auto` 模式的簡短形式就是 `jcmr`；`off` 模式不顯示。視情況在後面加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr pin opus`、`built-in model table`、`Jev <錯誤>`。
 
 API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並顯示 `jcmr: <model> was not used (<model> answered); not switching to it again`。請求完全沒有回應、回合又因錯誤結束時也一樣，括號裡改成 `no response`。
 
@@ -169,7 +187,7 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 | `api_key` | 空 | TypeSafe key。沒填就讀 `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | 新 session 的模式：`shadow`、`auto` 或 `off` |
 | `low_model`、`balanced_model`、`strong_model` | `haiku`、`sonnet`、`opus` | 別名（`sonnet`、`opus`、`haiku`、`fable`）或完整 model ID；填 `off` 停用該 tier |
-| `long_model` | 停用 | 填 `fable`（或其他別名、完整 ID）才啟用 |
+| `long_model` | `fable` | 別名或完整 model ID；填 `off` 停用。Fable 5.1 最貴 |
 | `tier_min_probability` | 0.6 | 勝出的 model 要有多少機率，才換掉 session 的 model |
 | `signal_threshold` | 0.7 | 「接續」、「上次失敗」、「有風險」的機率要超過多少才算；三題共用這個門檻 |
 | `min_effort` | `low` | mod 設定的最低 effort |
