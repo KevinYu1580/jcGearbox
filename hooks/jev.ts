@@ -17,6 +17,8 @@ const TIER_CRITERIA: Record<Tier, string> = {
   long: 'The highest capability available: agent sessions that run for hours, multistep deep research, and analysis carried through to a finished document, spreadsheet or deck',
 }
 
+const ASK_ORDER: readonly Tier[] = ['strong', 'balanced', 'low', 'long']
+
 const QUESTIONS = {
   effort: {
     type: 'score',
@@ -104,10 +106,11 @@ export function buildRequest(input: {
 
   const questions: JevRequest['questions'] = {}
   if (isFirstTurn && tiers && tiers.length >= 2) {
-    // Weakest first: Jev leans toward the option listed first, and the
-    // everyday model is the safer side to lean to.
+    // Jev leans toward the option listed first. Anthropic's matrix starts
+    // most work on Opus, so strong goes first, then downward, and long last:
+    // Fable is the step up when Opus falls short.
     const criteria: Partial<Record<Tier, string>> = {}
-    for (const tier of [...TIERS].reverse()) if (tiers.includes(tier)) criteria[tier] = TIER_CRITERIA[tier]
+    for (const tier of ASK_ORDER) if (tiers.includes(tier)) criteria[tier] = TIER_CRITERIA[tier]
     questions.tier = {
       type: 'choice',
       instructions: 'Which model tier is needed to reliably complete the coding task that starts with `prompt`?',

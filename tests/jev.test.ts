@@ -25,13 +25,13 @@ describe('buildRequest', () => {
     })
     expect(body.model).toBe('jev-latest')
     expect(Object.keys(body.questions)).toEqual(['tier', 'effort', 'high_stakes'])
-    expect(Object.keys(body.questions.tier?.criteria ?? {})).toEqual(['balanced', 'strong'])
+    expect(Object.keys(body.questions.tier?.criteria ?? {})).toEqual(['strong', 'balanced'])
     expect(body.state).toEqual({ prompt: 'fix the race' })
   })
 
-  test('the tier options go weakest first', () => {
-    const body = buildRequest({ jevModel: 'jev-latest', prompt: 'p', isFirstTurn: true, tiers: ['long', 'strong', 'balanced', 'low'] })
-    expect(Object.keys(body.questions.tier?.criteria ?? {})).toEqual(['low', 'balanced', 'strong', 'long'])
+  test('the tier options start at strong, go down, and end at long', () => {
+    const body = buildRequest({ jevModel: 'jev-latest', prompt: 'p', isFirstTurn: true, tiers: ['low', 'long', 'balanced', 'strong'] })
+    expect(Object.keys(body.questions.tier?.criteria ?? {})).toEqual(['strong', 'balanced', 'low', 'long'])
   })
 
   test('a first turn with nothing to choose between asks no tier question', () => {
