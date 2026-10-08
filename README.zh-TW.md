@@ -18,8 +18,6 @@ mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 sh
 /plugin install jev-cc-model-router@jev-cc-model-router
 ```
 
-repo 目前是私人的，只有能存取它的 GitHub 帳號才能用這兩行安裝。
-
 把 key 填進 plugin 設定的 `api_key`（見[設定](#設定)），或設成環境變數 `TYPESAFE_API_KEY`。兩者都沒有時 mod 什麼都不做，狀態列顯示 `jcmr: no API key`。
 
 ## 怎麼選 model
@@ -219,7 +217,7 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 
 程式碼、檔案內容和工具結果都不送，除非它們就在你的 prompt 裡，或在 Claude 回答的結尾裡。不是你打的 prompt，內容一律不送，但 Claude 對它的回答結尾可能送出。只想送自己的 prompt，請關掉 `send_assistant_tail`；代價是「接續」題的判斷準確度會明顯下降（見[已知限制](#已知限制)）。
 
-TypeSafe 表示不拿這些資料訓練，但沒寫明保留多久。<!-- TODO: 補上 TypeSafe 資料政策的連結 -->伺服器在美國，只有 enterprise 方案提供 zero retention。
+TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不拿這些資料訓練，但沒寫明保留多久。伺服器在美國，只有 enterprise 方案提供 zero retention。
 
 在你的電腦上（Claude Code 的 plugin store），mod 會保存：
 
@@ -229,7 +227,7 @@ TypeSafe 表示不拿這些資料訓練，但沒寫明保留多久。<!-- TODO: 
 
 ## 已知限制
 
-- Jev 能不能判斷任務難度，證據很少：某個參考實作的評測 AUC 是 0.570，信賴區間包含亂猜<!-- TODO: 寫明是哪個參考實作並附連結 -->，也沒有繁體中文 prompt 的數據。
+- Jev 能不能判斷任務難度，證據很少：另一個以 Jev 為基礎的 router「jev-router」的[評測](https://github.com/gargpratyush/jev-router/blob/benchmarking/bench/agentic/RESULTS.md)，在 86 組 Claude Code 任務配對上 AUC 是 0.570，信賴區間包含亂猜，還不如只看 prompt 長度（0.613），也沒有繁體中文 prompt 的數據。
 - 「接續」題用作者自己的 169 則 prompt 量過（2026 年 10 月，`jev-latest`，由兩個 AI 標註者各自標、兩者一致的部分）：148 則接續、21 則新任務。改之前只給上一個 prompt、門檻 0.7，正確率 59%，漏掉 66 則接續。給 Claude 回答的結尾、門檻 0.6 之後，正確率 84%：漏掉 21 則接續，21 則新任務裡有 6 則被當成接續、沿用了上一回合的 effort。主要是 Claude 回答的結尾在起作用：同樣用 0.7 門檻，光是加上它，漏判就從 66 降到 34。改寫題目的說法沒有幫助。新任務樣本少，後面這個數字只能當參考。
 - 對話壓縮（自動或 `/compact`）和 Claude Code 的其他附屬請求，不經過 mod 用來改寫請求的那個 hook，所以會用你選的 model 和 session 原本的 effort。mod 已經把 session 換到別的 model 時，這些請求讀不到對話的 prompt cache，摘要也由你選的 model 寫。
 - model 清單快取是 Claude Code 的內部檔案，格式改了 mod 就退回內建對照表，而內建表要在新 model 推出時更新。
@@ -246,6 +244,8 @@ claude plugin test .
 兩個 validate 都要跑。資料夾裡有 `marketplace.json` 時，`claude plugin validate .` 只驗 marketplace，hooks module 要靠第一行才驗得到。
 
 要試用本機版本，用 `claude --plugin-dir /path/to/jev-cc-model-router` 啟動。桌面 App 不能帶參數，改在 `~/.claude/settings.json` 的 `env` 加 `CLAUDE_CODE_PLUGIN_DIRS` 指向這個資料夾，再加 `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` 就能存檔即重載。這樣載入的版本從 `pluginConfigs["jev-cc-model-router"]` 讀設定，不是讀已安裝版本那一筆。設計文件在 [docs/SPEC.md](docs/SPEC.md)。
+
+型別檢查需要 Claude Code 的型別宣告：先在 Claude Code 裡執行一次 `/plugin-types .claude-plugin/types`（這個資料夾不進版控），再跑 `npx -p typescript tsc --noEmit -p .`。
 
 ## 授權
 

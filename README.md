@@ -18,8 +18,6 @@ A mod is a Claude Code plugin made of function hooks. This one starts in shadow 
 /plugin install jev-cc-model-router@jev-cc-model-router
 ```
 
-The repository is private for now, so these commands work only for GitHub accounts with access to it.
-
 Put the key in the plugin's `api_key` setting (see [Settings](#settings)) or in the `TYPESAFE_API_KEY` environment variable. With neither, the mod does nothing and the status line says `jcmr: no API key`.
 
 ## Picking the model
@@ -219,7 +217,7 @@ For each prompt you type, TypeSafe receives only:
 
 Code, file contents and tool results are not sent unless they are in your prompt or in the end of Claude's reply. The text of a prompt you didn't type is never sent, though the end of Claude's reply to it can be. Turn `send_assistant_tail` off to send only your own prompts; the continuation question then gets it right far less often (see [Limitations](#limitations)).
 
-TypeSafe says it does not train on this data, but not how long it keeps it.<!-- TODO: link TypeSafe's data policy --> Its servers are in the US, and zero retention is offered only on the enterprise plan.
+TypeSafe's [privacy policy](https://typesafe.ai/legal/privacy-policy) says it does not train on this data, but not how long it keeps it. Its servers are in the US, and zero retention is offered only on the enterprise plan.
 
 On your machine, in Claude Code's plugin store, the mod keeps:
 
@@ -229,7 +227,7 @@ On your machine, in Claude Code's plugin store, the mod keeps:
 
 ## Limitations
 
-- There is little evidence that Jev can judge task difficulty. The evaluation of a reference implementation reports an AUC of 0.570, with a confidence interval that includes chance,<!-- TODO: name and link the reference implementation --> and there is no data on Traditional Chinese prompts.
+- There is little evidence that Jev can judge task difficulty. The [benchmark](https://github.com/gargpratyush/jev-router/blob/benchmarking/bench/agentic/RESULTS.md) of jev-router, an earlier Jev-based router, reports an AUC of 0.570 over 86 pairs of Claude Code tasks, with a confidence interval that includes chance and below prompt length alone (0.613), and there is no data on Traditional Chinese prompts.
 - The continuation question was measured on 169 of the author's own prompts (October 2026, `jev-latest`, labeled by two AI annotators who agreed on them): 148 continuations and 21 new tasks. Before, with only the previous prompt and a 0.7 threshold, it was right 59% of the time and missed 66 continuations. With the end of Claude's reply and a 0.6 threshold it is right 84% of the time: it misses 21 continuations and takes 6 of the 21 new tasks for continuations, which then keep the last effort. The end of Claude's reply does most of the work: at the old 0.7 threshold it alone cut the missed continuations from 66 to 34. Rewording the question didn't help. With so few new tasks, the second number is rough.
 - Compaction (automatic or `/compact`) and Claude Code's other side requests don't go through the hook the mod uses to rewrite requests. They run on the model you picked, at the session's own effort. When the mod has moved the session to another model, those requests can't read the conversation's prompt cache, and your picked model writes the summary.
 - The model list cache is an internal Claude Code file. If its format changes, the mod falls back to its built-in table, which needs updating when new models ship.
@@ -242,6 +240,8 @@ claude plugin validate .claude-plugin/plugin.json
 claude plugin validate .
 claude plugin test .
 ```
+
+Type-checking needs Claude Code's type declarations: run `/plugin-types .claude-plugin/types` in Claude Code once (the folder is git-ignored), then `npx -p typescript tsc --noEmit -p .`.
 
 Run both validations. On a folder that has a `marketplace.json`, `claude plugin validate .` checks only the marketplace; the first command is the one that checks the hooks module.
 
