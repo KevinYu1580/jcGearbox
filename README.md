@@ -96,6 +96,7 @@ flowchart TD
 | Opus 4.6, Sonnet 4.6, Mythos Preview | no `xhigh` (becomes `high`) | `high` |
 | Opus 4.5 | up to `high` | `high` |
 | Haiku and older models | no effort | — |
+| A model id the mod doesn't know | every level | `high` |
 
 Prompts you didn't type (notifications, scheduled prompts) and subagents are left alone. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode`. If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why.
 
@@ -107,6 +108,8 @@ Prompts you didn't type (notifications, scheduled prompts) and subagents are lef
 | `/model` or the picker, after the first prompt | Stops changing the model for this session |
 | `/effort` or the picker, after the first prompt | Stops changing the effort for this session |
 | `/jcmr-auto` | Drops all of the above |
+
+Picking the session's original model again in `/model` isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick. Use `/jcmr-pin <model>` to go back.
 
 ## Commands
 

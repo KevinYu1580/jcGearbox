@@ -96,6 +96,7 @@ flowchart TD
 | Opus 4.6、Sonnet 4.6、Mythos Preview | 沒有 `xhigh`（改成 `high`） | `high` |
 | Opus 4.5 | 最高 `high` | `high` |
 | Haiku 和更舊的 model | 不支援 effort | — |
+| mod 不認得的 model ID | 全部等級 | `high` |
 
 不是你打的 prompt（通知、排程）和子代理都不處理。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort，並標示 `ultracode`。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。
 
@@ -107,6 +108,8 @@ flowchart TD
 | 第一個 prompt 之後用 `/model` 或選單換 model | 這個 session 不再改 model |
 | 第一個 prompt 之後用 `/effort` 或選單換 effort | 這個 session 不再改 effort |
 | `/jcmr-auto` | 清掉以上全部 |
+
+在 `/model` 選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model。要回去請用 `/jcmr-pin <model>`。
 
 ## 指令
 
