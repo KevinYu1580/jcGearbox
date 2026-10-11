@@ -20,6 +20,16 @@ A mod is a Claude Code plugin made of function hooks. This one starts in shadow 
 
 Put the key in the plugin's `api_key` setting (see [Settings](#settings)) or in the `TYPESAFE_API_KEY` environment variable. With neither, the mod does nothing and the status line says `jcmr: no API key`.
 
+### Give Jev the context
+
+**Turn on `send_assistant_tail`.** It is off by default because it sends the end of Claude's replies to TypeSafe, but Jev judges much better with it. A prompt like "here are the results" or "the button isn't there" only makes sense next to what Claude said before it. Without Claude's reply, Jev took 66 of 148 such follow-ups for new tasks; with it, 34 at the same threshold (see [Limitations](#limitations)).
+
+```bash
+echo '{"send_assistant_tail": "true"}' | claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin
+```
+
+Or set it in `/plugin`, under the plugin's settings. What it sends is listed under [Privacy](#privacy).
+
 ## Picking the model
 
 On the first prompt you type in a session, Jev is asked which tier the task needs. Each tier maps to a model:
@@ -90,7 +100,7 @@ In words:
 4. Keep it between `min_effort` and `max_effort`. `max_effort` is applied last, so if the two conflict, or the risky rule asks for more than `max_effort`, `max_effort` wins.
 5. Lower it to what the model takes (see the table below).
 
-Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability. A continuation counts above 0.6 (`continuation_threshold`), the other two above 0.7 (`signal_threshold`). Jev also sees the end of Claude's last reply (`send_assistant_tail`, on by default), so a prompt that pastes the output Claude asked for, or answers its question, reads as a continuation. If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
+Jev answers "is this a continuation", "did the last attempt fail" and "is this risky" with a probability. A continuation counts above 0.6 (`continuation_threshold`), the other two above 0.7 (`signal_threshold`). With `send_assistant_tail` on, Jev also sees the end of Claude's last reply, so a prompt that pastes the output Claude asked for, or answers its question, reads as a continuation (see [Give Jev the context](#give-jev-the-context)). If you say the last attempt failed and it already ran at the ceiling (`max_effort`, `max` by default) on a model other than Opus or Fable, the status line suggests `/jcmr pin opus`. On a session's first prompt there is no last task or last attempt, so the first two questions are skipped.
 
 Examples from real sessions (October 2026, prompts translated from Chinese):
 
@@ -196,7 +206,8 @@ In the `/plugin configure` menu, `default_mode`, `min_effort` and `max_effort` a
 | `max_effort` | `max` | Highest effort the mod sets; wins over `min_effort` and the risky rule. An effort you set yourself is not capped |
 | `jev_model` | `jev-latest` | A version such as `jev-1.13.0` pins one |
 | `jev_timeout_seconds` | 3 | How long the first request of each prompt you type waits for Jev, from 0.5 to 8. A longer wait gives Jev more time to answer, but when Jev is slow every prompt starts that much later |
-| `send_assistant_tail` | on | Also send the last ~1000 characters of Claude's previous reply (see [Privacy](#privacy)) |
+| `send_assistant_tail` | off (recommended: on) | Also send the end of Claude's previous reply, `assistant_tail_chars` long (see [Privacy](#privacy)) |
+| `assistant_tail_chars` | 1000 | How many characters from the end of Claude's reply to send, 100 to 8000. Each 1000 characters adds about 700 tokens per prompt |
 
 ### Model names
 
@@ -213,9 +224,9 @@ For each prompt you type, TypeSafe receives only:
 - the prompt, up to about 6000 characters (a longer one keeps its start and its end);
 - your previous prompt, up to about 1000 characters;
 - from the second prompt on, the session's current model and the last effort;
-- the last ~1000 characters of Claude's previous reply, unless you turn `send_assistant_tail` off.
+- with `send_assistant_tail` on, the end of Claude's previous reply, 1000 characters by default (`assistant_tail_chars`).
 
-Code, file contents and tool results are not sent unless they are in your prompt or in the end of Claude's reply. The text of a prompt you didn't type is never sent, though the end of Claude's reply to it can be. Turn `send_assistant_tail` off to send only your own prompts; the continuation question then gets it right far less often (see [Limitations](#limitations)).
+Code, file contents and tool results are not sent unless they are in your prompt, or in the end of Claude's reply with `send_assistant_tail` on. The text of a prompt you didn't type is never sent, though with `send_assistant_tail` on the end of Claude's reply to it can be.
 
 TypeSafe's [privacy policy](https://typesafe.ai/legal/privacy-policy) says it does not train on this data, but not how long it keeps it. Its servers are in the US, and zero retention is offered only on the enterprise plan.
 
@@ -223,7 +234,7 @@ On your machine, in Claude Code's plugin store, the mod keeps:
 
 - the first 200 characters of each prompt, in the decision log (the latest 200 decisions);
 - your last prompt in each session, up to 1000 characters (the latest 200 sessions);
-- the end of Claude's last reply in each session (unless `send_assistant_tail` is off). It stays until that session's record is pruned, even after you turn the option off.
+- with `send_assistant_tail` on, the end of Claude's last reply in each session. It stays until that session's record is pruned, even after you turn the option off.
 
 ## Limitations
 

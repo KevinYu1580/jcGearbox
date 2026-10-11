@@ -20,6 +20,16 @@ mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 sh
 
 把 key 填進 plugin 設定的 `api_key`（見[設定](#設定)），或設成環境變數 `TYPESAFE_API_KEY`。兩者都沒有時 mod 什麼都不做，狀態列顯示 `jcmr: no API key`。
 
+### 給 Jev 上下文
+
+**建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多。像「結果如下」、「我沒看到那個按鈕」這種 prompt，要搭配 Claude 上一句說了什麼才看得懂。沒有 Claude 的回答時，148 則這類接續有 66 則被 Jev 當成新任務；開了之後，同樣門檻下只剩 34 則（見[已知限制](#已知限制)）。
+
+```bash
+echo '{"send_assistant_tail": "true"}' | claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin
+```
+
+也可以在 `/plugin` 的 plugin 設定裡開。會送出哪些內容，見[隱私](#隱私)。
+
 ## 怎麼選 model
 
 session 裡你送出的第一個 prompt，會請 Jev 判斷任務需要哪個 tier，每個 tier 對應一個 model：
@@ -90,7 +100,7 @@ flowchart TD
 4. 最後限制在 `min_effort` 和 `max_effort` 之間。`max_effort` 最後套用，所以兩者衝突，或「有風險」要求的等級超過 `max_effort` 時，以 `max_effort` 為準。
 5. 再降到 model 能用的等級（見下表）。
 
-「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率。「接續」超過 0.6（`continuation_threshold`）才算，另外兩題要超過 0.7（`signal_threshold`）。Jev 也會看到 Claude 上一則回答的結尾（`send_assistant_tail`，預設開），所以貼上 Claude 要你跑的結果、或回答它的問題時，會被判成接續。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
+「是不是接續」、「上次有沒有失敗」、「有沒有風險」這三題，Jev 都回答一個機率。「接續」超過 0.6（`continuation_threshold`）才算，另外兩題要超過 0.7（`signal_threshold`）。開啟 `send_assistant_tail` 時，Jev 也會看到 Claude 上一則回答的結尾，所以貼上 Claude 要你跑的結果、或回答它的問題時，會被判成接續（見[給 Jev 上下文](#給-jev-上下文)）。你說上次失敗、而那次已經用到上限（`max_effort`，預設 `max`），且 model 不是 Opus 或 Fable 時，狀態列會建議 `/jcmr pin opus`。session 的第一個 prompt 沒有「上一件事」也沒有「上次」，所以跳過前兩題。
 
 實際 session 的例子（2026 年 10 月）：
 
@@ -196,7 +206,8 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 | `max_effort` | `max` | mod 設定的最高 effort；蓋過 `min_effort` 和「有風險」規則。你自己設的 effort 不受限制 |
 | `jev_model` | `jev-latest` | 填版本號（如 `jev-1.13.0`）就固定在那一版 |
 | `jev_timeout_seconds` | 3 | 你送出的每個 prompt，第一個請求最多等 Jev 幾秒（0.5–8）。等得越久，Jev 越有機會回答，但 Jev 慢的時候，每個 prompt 也會晚這麼久才開始 |
-| `send_assistant_tail` | 開 | 一併送出 Claude 上一則回答的最後約 1000 字（見[隱私](#隱私)） |
+| `send_assistant_tail` | 關（建議開） | 一併送出 Claude 上一則回答的結尾，長度見 `assistant_tail_chars`（見[隱私](#隱私)） |
+| `assistant_tail_chars` | 1000 | 送出 Claude 回答結尾的字數，100 到 8000。每 1000 字每個 prompt 約多 700 tokens |
 
 ### model 名稱
 
@@ -213,9 +224,9 @@ API 回應的 model 跟要求的不同時，mod 不再要求那個 model，並�
 - 這則 prompt，最多約 6000 字（太長就保留開頭和結尾）；
 - 你的上一則 prompt，最多約 1000 字；
 - 從第二個 prompt 起，session 目前的 model 和上一回合的 effort；
-- Claude 上一則回答的最後約 1000 字，除非你關掉 `send_assistant_tail`。
+- 開啟 `send_assistant_tail` 時，Claude 上一則回答的結尾，預設 1000 字（`assistant_tail_chars`）。
 
-程式碼、檔案內容和工具結果都不送，除非它們就在你的 prompt 裡，或在 Claude 回答的結尾裡。不是你打的 prompt，內容一律不送，但 Claude 對它的回答結尾可能送出。只想送自己的 prompt，請關掉 `send_assistant_tail`；代價是「接續」題的判斷準確度會明顯下降（見[已知限制](#已知限制)）。
+程式碼、檔案內容和工具結果都不送，除非它們就在你的 prompt 裡，或在開啟 `send_assistant_tail` 時出現在 Claude 回答的結尾裡。不是你打的 prompt，內容一律不送；但開啟 `send_assistant_tail` 時，Claude 對它的回答結尾可能送出。
 
 TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不拿這些資料訓練，但沒寫明保留多久。伺服器在美國，只有 enterprise 方案提供 zero retention。
 
@@ -223,7 +234,7 @@ TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不
 
 - 每則 prompt 的前 200 字，記在決策紀錄裡（保留最近 200 筆）；
 - 每個 session 的上一則 prompt，最多 1000 字（保留最近 200 個 session）；
-- 每個 session 中 Claude 上一則回答的結尾（關掉 `send_assistant_tail` 時不存）。關掉選項後它仍會留著，直到那個 session 的紀錄被清掉。
+- 開啟 `send_assistant_tail` 時，每個 session 中 Claude 上一則回答的結尾。關掉選項後它仍會留著，直到那個 session 的紀錄被清掉。
 
 ## 已知限制
 
