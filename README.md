@@ -22,7 +22,7 @@ Then run `/jcmr-setup`: it walks you through the key, the mode and the settings 
 
 ### Give Jev the context
 
-**Turn on `send_assistant_tail`.** It is off by default because it sends the end of Claude's replies to TypeSafe, but Jev judges much better with it. A prompt like "here are the results" or "the button isn't there" only makes sense next to what Claude said before it. Without Claude's reply, Jev took 66 of 148 such follow-ups for new tasks; with it, 34 at the same threshold.
+**Turn on `send_assistant_tail`.** It is off by default because it sends the end of Claude's replies to TypeSafe, but Jev judges much better with it. A prompt like "here are the results" or "the button isn't there" only makes sense next to what Claude said before it.
 
 ```bash
 echo '{"send_assistant_tail": "true"}' | claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin

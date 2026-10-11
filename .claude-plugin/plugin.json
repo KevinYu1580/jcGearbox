@@ -1,6 +1,6 @@
 {
   "name": "jev-cc-model-router",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
   "author": {
     "name": "KevinYu1580"

@@ -34,7 +34,7 @@ Check whether a key is set without showing it: the `TYPESAFE_API_KEY` variable (
 
 ## 4. Send the end of Claude's reply (`send_assistant_tail`)
 
-Recommend turning it on. Jev decides whether a prompt like "here are the results" continues the last task far better when it sees what Claude said before it (on the author's prompts, missed continuations fell from 66 to 34 of 148). The cost is privacy: the end of Claude's reply, which can hold code or error messages, goes to TypeSafe. If they turn it on, `assistant_tail_chars` (default 1000, 100 to 8000) sets how much; about 700 tokens per 1000 characters, a fraction of a cent a day.
+Recommend turning it on. Jev decides whether a prompt like "here are the results" continues the last task far better when it sees what Claude said before it. The cost is privacy: the end of Claude's reply, which can hold code or error messages, goes to TypeSafe. If they turn it on, `assistant_tail_chars` (default 1000, 100 to 8000) sets how much; about 700 tokens per 1000 characters, a fraction of a cent a day.
 
 ## 5. Optional: the models
 

@@ -22,7 +22,7 @@ mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 sh
 
 ### 給 Jev 上下文
 
-**建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多。像「結果如下」、「我沒看到那個按鈕」這種 prompt，要搭配 Claude 上一句說了什麼才看得懂。沒有 Claude 的回答時，148 則這類接續有 66 則被 Jev 當成新任務；開了之後，同樣門檻下只剩 34 則。
+**建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多。像「結果如下」、「我沒看到那個按鈕」這種 prompt，要搭配 Claude 上一句說了什麼才看得懂。
 
 ```bash
 echo '{"send_assistant_tail": "true"}' | claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin
