@@ -101,7 +101,7 @@ export function buildRequest(input: {
   const { jevModel, prompt, isFirstTurn, tiers, previousPrompt, replyTail, previous } = input
   const state: JevState = { prompt: clip(prompt, PROMPT_CHARS) }
   if (previousPrompt) state.previous_prompt = clip(previousPrompt, CONTEXT_CHARS)
-  if (replyTail) state.previous_reply_tail = replyTail.slice(-CONTEXT_CHARS)
+  if (replyTail) state.previous_reply_tail = replyTail // the caller keeps assistant_tail_chars of it
   if (previous) state.previous = previous
 
   const questions: JevRequest['questions'] = {}

@@ -63,11 +63,9 @@ describe('buildRequest', () => {
       prompt: 'x'.repeat(9000),
       isFirstTurn: false,
       previousPrompt: 'y'.repeat(3000),
-      replyTail: `${'a'.repeat(2000)}${'z'.repeat(1000)}`,
     })
     expect(body.state.prompt.length).toBe(6003)
     expect(body.state.previous_prompt?.length).toBe(1003)
-    expect(body.state.previous_reply_tail).toBe('z'.repeat(1000))
   })
 
   test('each question has the type Jev expects', () => {

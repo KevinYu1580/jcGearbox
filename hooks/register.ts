@@ -181,7 +181,7 @@ export const register: Register = (on, options) => {
       if (opt.sendAssistantTail && e.answer && !ctx.disabled) {
         const [id, r] = await record($)
         if ((r.mode ?? opt.defaultMode) !== 'off' && (await apiKey($, opt))) {
-          r.replyTail = e.answer.slice(-CONTEXT_CHARS)
+          r.replyTail = e.answer.slice(-opt.tailChars)
           await save($, id, r)
         }
       }
@@ -319,7 +319,7 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
       isFirstTurn: first,
       tiers: distinct >= 2 ? offered : undefined,
       previousPrompt: r.prompt,
-      replyTail: opt.sendAssistantTail ? r.replyTail : undefined,
+      replyTail: opt.sendAssistantTail ? r.replyTail?.slice(-opt.tailChars) : undefined,
       previous: first ? undefined : { model: current(r) ?? model, effort: lastEffort(r) },
     })
     asked = await askJev($, key, body, signal, opt.jevTimeoutMs)
@@ -584,6 +584,7 @@ function readOptions(options: PluginOptions) {
     jevModel: text('jev_model') || 'jev-latest',
     jevTimeoutMs: Math.round(num('jev_timeout_seconds') * 1000),
     sendAssistantTail: options.send_assistant_tail === true,
+    tailChars: Math.round(num('assistant_tail_chars')),
   }
 }
 

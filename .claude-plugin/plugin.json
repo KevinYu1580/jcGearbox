@@ -1,6 +1,6 @@
 {
   "name": "jev-cc-model-router",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
   "author": {
     "name": "KevinYu1580"
@@ -117,8 +117,16 @@
     "send_assistant_tail": {
       "type": "boolean",
       "title": "Send the end of Claude's last reply",
-      "description": "Default: on. Also send the last ~1000 characters of Claude's previous reply to Jev, so a prompt that answers it, or pastes the output it asked for, is judged against it. Turn off to send only your prompts.",
-      "default": true
+      "description": "Default: off. Recommended: on. Also send the last ~1000 characters of Claude's previous reply to Jev, so a prompt that answers it, or pastes the output it asked for, is judged against it. Off, Jev sees only your prompts and misses far more continuations.",
+      "default": false
+    },
+    "assistant_tail_chars": {
+      "type": "number",
+      "title": "Characters of Claude's reply to send",
+      "description": "Default: 1000. How many characters from the end of Claude's last reply go to Jev when send_assistant_tail is on, 100 to 8000. 1000 characters cost about 700 more tokens per prompt, and a longer request makes Jev slower to answer.",
+      "min": 100,
+      "max": 8000,
+      "default": 1000
     }
   }
 }

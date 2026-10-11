@@ -52,12 +52,22 @@ describe('send_assistant_tail', () => {
     expect(tail.endsWith('Shall I apply?')).toBe(true)
   })
 
-  test("on by default: Claude's reply reaches the next request", async ($, on) => {
+  test('assistant_tail_chars sets how much of the reply is kept and sent', { options: { send_assistant_tail: true, assistant_tail_chars: 300 } }, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, store: { 'session:session-1': { replyTail: 'x'.repeat(1000) } } })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: `${'a'.repeat(1000)}${'b'.repeat(300)}` })
+    expect(w.asked[0].state.previous_reply_tail).toHaveLength(300)
+    expect((w.db.get('session:session-1') as any).replyTail).toBe('b'.repeat(300))
+    await turn($, 'yes', 't2')
+    expect(w.asked[1].state.previous_reply_tail).toBe('b'.repeat(300))
+  })
+
+  test("off by default: Claude's reply does not reach the next request", async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { answer: 'Shall I apply?' })
     await turn($, 'yes', 't2')
-    expect(w.asked[1].state.previous_reply_tail).toBe('Shall I apply?')
+    expect(w.asked[1].state).not.toHaveProperty('previous_reply_tail')
   })
 
   test("off: the reply's end is not kept", NO_TAIL, async ($, on) => {
