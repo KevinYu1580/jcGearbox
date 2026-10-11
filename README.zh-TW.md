@@ -4,7 +4,7 @@
 
 Claude Code 的 model 和 effort 都要自己選。這個 mod 改由 [TypeSafe 的 Jev](https://typesafe.ai) 判斷任務難度來決定：session 的第一個 prompt 決定 model，簡單的用 Haiku，平常用 Sonnet，難題用 Opus，要跑好幾小時的用 Fable；每個 prompt（包括第一個）則決定 effort，簡單的問題調低，你說上次失敗或任務可能闖禍時調高。
 
-mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 shadow 模式：每個 prompt 都判斷，結果顯示在狀態列，但請求原樣送出。model tier 和 effort 等級都依照 Anthropic 官方的 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)和 [effort 等級](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)設計。等 `/jcmr log` 裡的判斷讓你放心了，再切到 `auto`；Jev 判斷難度準不準，目前證據很薄（見[已知限制](#已知限制)）。
+mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 shadow 模式：每個 prompt 都判斷，結果顯示在狀態列，但請求原樣送出。model tier 和 effort 等級都依照 Anthropic 官方的 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)和 [effort 等級](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)設計。等 `/jcmr log` 裡的判斷讓你放心了，再切到 `auto`；Jev 判斷難度準不準，目前證據很薄。
 
 ## 需求
 
@@ -18,11 +18,11 @@ mod 是用 function hooks 寫成的 Claude Code plugin。這個 mod 預設是 sh
 /plugin install jev-cc-model-router@jev-cc-model-router
 ```
 
-把 key 填進 plugin 設定的 `api_key`（見[設定](#設定)），或設成環境變數 `TYPESAFE_API_KEY`。兩者都沒有時 mod 什麼都不做，狀態列顯示 `jcmr: no API key`。
+接著執行 `/jcmr-setup`，它會一步步帶你設好 key、模式和下面的設定，並確認 mod 有在運作。也可以手動設定：把 key 填進 plugin 設定的 `api_key`（見[設定](#設定)），或設成環境變數 `TYPESAFE_API_KEY`。兩者都沒有時 mod 什麼都不做，狀態列顯示 `jcmr: no API key`。
 
 ### 給 Jev 上下文
 
-**建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多。像「結果如下」、「我沒看到那個按鈕」這種 prompt，要搭配 Claude 上一句說了什麼才看得懂。沒有 Claude 的回答時，148 則這類接續有 66 則被 Jev 當成新任務；開了之後，同樣門檻下只剩 34 則（見[已知限制](#已知限制)）。
+**建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多。像「結果如下」、「我沒看到那個按鈕」這種 prompt，要搭配 Claude 上一句說了什麼才看得懂。沒有 Claude 的回答時，148 則這類接續有 66 則被 Jev 當成新任務；開了之後，同樣門檻下只剩 34 則。
 
 ```bash
 echo '{"send_assistant_tail": "true"}' | claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin
@@ -45,7 +45,7 @@ tier 依照 Anthropic 官方 [model 選擇矩陣](https://platform.claude.com/do
 
 幾個 tier 對應到同一個 model 時，機率會加總，所以照預設設定，是在 Haiku、Sonnet、Opus 和 Fable 之間選。Fable 5.1 最貴，有些帳號也不能用（例如零資料保留）；不想讓 session 切到它，請把 `long_model` 設成 `off`。API 拒絕時，第一個 prompt 會失敗一次，之後這個 session 不再要求 Fable（見[狀態列](#狀態列)）。你設定的 tier 如果對應不到兩個以上不同的 model，就沒得選，也不會問 Jev tier 題。勝出的 model 機率要有 0.6（`tier_min_probability`）才會換，不到就維持你選的 model；平手時選較強的。
 
-這個選擇會維持到 session 結束，因為中途換 model 會讓 prompt cache 失效。mod 只有在 API 沒用它要求的 model 回應時才會自己換回去（見[狀態列](#狀態列)）；你自己下的 `/jcmr pin`、`/jcmr auto` 也會換。新 session、`/clear` 或 fork 會重新選，`--resume` 和對話壓縮都沿用原本的選擇，不過壓縮請求本身仍用你選的 model（見[已知限制](#已知限制)）。
+這個選擇會維持到 session 結束，因為中途換 model 會讓 prompt cache 失效。mod 只有在 API 沒用它要求的 model 回應時才會自己換回去（見[狀態列](#狀態列)）；你自己下的 `/jcmr pin`、`/jcmr auto` 也會換。新 session、`/clear` 或 fork 會重新選，`--resume` 和對話壓縮都沿用原本的選擇，不過壓縮請求本身仍用你選的 model。
 
 ### 一個 session 裡 model 怎麼變
 
@@ -155,6 +155,7 @@ Jev 回傳錯誤，或超過 `jev_timeout_seconds`（預設 3 秒）沒回應，
 
 | 指令 | 作用 |
 |---|---|
+| `/jcmr-setup` | 一步步帶你完成設定 |
 | `/jcmr-status`（或 `/jcmr`） | 顯示模式、model 和 effort 的狀態，上一則 prompt 的 Jev 分數，以及上一個請求實際帶的 model 和 effort（`sent`，附同樣的原因）|
 | `/jcmr-auto`、`/jcmr-shadow`、`/jcmr-off` | 只改這個 session 的模式；新 session 從 `default_mode` 開始。`/jcmr-auto` 會一併清掉 pin |
 | `/jcmr-on` | `/jcmr-off` 之後重新開啟這個 session，回到 `default_mode`（`default_mode` 是 `off` 時改用 `auto`）。pin 會保留 |
@@ -235,28 +236,6 @@ TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不
 - 每則 prompt 的前 200 字，記在決策紀錄裡（保留最近 200 筆）；
 - 每個 session 的上一則 prompt，最多 1000 字（保留最近 200 個 session）；
 - 開啟 `send_assistant_tail` 時，每個 session 中 Claude 上一則回答的結尾。關掉選項後它仍會留著，直到那個 session 的紀錄被清掉。
-
-## 已知限制
-
-- Jev 能不能判斷任務難度，證據很少：另一個以 Jev 為基礎的 router「jev-router」的[評測](https://github.com/gargpratyush/jev-router/blob/benchmarking/bench/agentic/RESULTS.md)，在 86 組 Claude Code 任務配對上 AUC 是 0.570，信賴區間包含亂猜，還不如只看 prompt 長度（0.613），也沒有繁體中文 prompt 的數據。
-- 「接續」題用作者自己的 169 則 prompt 量過（2026 年 10 月，`jev-latest`，由兩個 AI 標註者各自標、兩者一致的部分）：148 則接續、21 則新任務。改之前只給上一個 prompt、門檻 0.7，正確率 59%，漏掉 66 則接續。給 Claude 回答的結尾、門檻 0.6 之後，正確率 84%：漏掉 21 則接續，21 則新任務裡有 6 則被當成接續、沿用了上一回合的 effort。主要是 Claude 回答的結尾在起作用：同樣用 0.7 門檻，光是加上它，漏判就從 66 降到 34。改寫題目的說法沒有幫助。新任務樣本少，後面這個數字只能當參考。
-- 對話壓縮（自動或 `/compact`）和 Claude Code 的其他附屬請求，不經過 mod 用來改寫請求的那個 hook，所以會用你選的 model 和 session 原本的 effort。mod 已經把 session 換到別的 model 時，這些請求讀不到對話的 prompt cache，摘要也由你選的 model 寫。
-- model 清單快取是 Claude Code 的內部檔案，格式改了 mod 就退回內建對照表，而內建表要在新 model 推出時更新。
-- 換 effort 不會讓 prompt cache 失效，這點只在 Opus 5.5（Claude Code 2.1.280 以後）和 Sonnet 5.5（2.1.286）上看過，樣本少。
-
-## 開發
-
-```
-claude plugin validate .claude-plugin/plugin.json
-claude plugin validate .
-claude plugin test .
-```
-
-兩個 validate 都要跑。資料夾裡有 `marketplace.json` 時，`claude plugin validate .` 只驗 marketplace，hooks module 要靠第一行才驗得到。
-
-要試用本機版本，用 `claude --plugin-dir /path/to/jev-cc-model-router` 啟動。桌面 App 不能帶參數，改在 `~/.claude/settings.json` 的 `env` 加 `CLAUDE_CODE_PLUGIN_DIRS` 指向這個資料夾，再加 `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` 就能存檔即重載。這樣載入的版本從 `pluginConfigs["jev-cc-model-router"]` 讀設定，不是讀已安裝版本那一筆。設計文件在 [docs/SPEC.md](docs/SPEC.md)。
-
-型別檢查需要 Claude Code 的型別宣告：先在 Claude Code 裡執行一次 `/plugin-types .claude-plugin/types`（這個資料夾不進版控），再跑 `npx -p typescript tsc --noEmit -p .`。
 
 ## 授權
 
