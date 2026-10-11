@@ -2,6 +2,10 @@
 
 [English](README.md) · 繁體中文
 
+## 解決什麼問題
+
+在 Claude Code 裡，你選一個 model 和一個 effort，之後所有 prompt 都用它。結果不是簡單的事也付大錢（用 Opus、high effort 改個變數名），就是難題用了太弱的設定（用便宜的 model、low effort 查並行 bug），除非你一直手動切換。這個 mod 替你做這個判斷：每個 prompt 都先問 Jev（一個快速的判斷 model）有多難，再配合調整 model 和 effort。簡單的工作更便宜、更快，難的工作用更強的 model、想得更多。
+
 這是一個 Claude Code mod，依 [TypeSafe 的 Jev](https://typesafe.ai) 判斷的任務難度，替你選 model 和 effort。session 的第一個 prompt 決定 model，每個 prompt 決定 effort。tier 和等級依照 Anthropic 官方的 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)和 [effort 等級](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)設計。
 
 預設是 **shadow** 模式：只在狀態列顯示它的選擇，請求原樣送出。看 `/jcmr-log` 覺得可信後再切到 `auto`；Jev 判斷難度準不準，目前證據還很少。
@@ -43,13 +47,13 @@ session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因
 
 ### 一個 session 裡 model 怎麼變
 
-假設你選的 model 是 Sonnet：model 只在第一個 prompt 決定一次（圖 1），之後只有圖 2 這幾件事會換掉它。
+model 只在第一個 prompt 決定一次（圖 1），之後只有圖 2 這幾件事會換掉它。每個 tier 對應哪個 model，由你的設定決定。
 
 ```mermaid
 flowchart TD
-    P["新 session 的第一個 prompt<br/>（你選的 model：Sonnet）"] --> Q{"Jev 給 Opus 的機率<br/>≥ 0.6？"}
-    Q -->|"是"| O["這個 session<br/>接下來都用 Opus"]
-    Q -->|"否，或 Jev 出錯、逾時"| S["這個 session<br/>接下來都用 Sonnet"]
+    P["新 session 的第一個 prompt<br/>（用你選的 model）"] --> Q{"Jev 選的 tier<br/>機率 ≥ 0.6？"}
+    Q -->|"是"| O["這個 session 接下來<br/>都用該 tier 的 model"]
+    Q -->|"否，或 Jev 出錯、逾時"| S["這個 session<br/>維持你選的 model"]
 ```
 
 ```mermaid
@@ -58,7 +62,7 @@ flowchart LR
     C -->|"/jcmr-pin X"| X["改用 X"]
     C -->|"/model 換成別的 model"| U["改用那個 model，<br/>mod 不再換"]
     C -->|"/jcmr-auto"| A["清掉 pin 和 /model，<br/>回到第一個 prompt 選的"]
-    C -->|"API 沒用 Opus 回應，<br/>或請求沒回應"| S["自動退回 Sonnet"]
+    C -->|"API 不提供<br/>選中的 model"| S["自動退回你選的 model"]
 ```
 
 圖畫的是 `auto` 模式；shadow 模式判斷方式相同，但只顯示在狀態列。

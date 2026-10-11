@@ -2,6 +2,10 @@
 
 English · [繁體中文](README.zh-TW.md)
 
+## Why
+
+In Claude Code you pick one model and one effort level and they apply to everything, so you either overpay for simple prompts (a rename on Opus at high effort) or under-power hard ones (a concurrency bug on a cheap model at low effort), unless you keep switching by hand. This mod makes that call for you: it asks Jev, a fast judgment model, how hard each prompt is and sets the model and effort to match, so easy work runs cheaper and faster and hard work gets the stronger model and more thinking.
+
 A Claude Code mod that picks the model and the effort for you, from how hard [TypeSafe's Jev](https://typesafe.ai) judges the task to be. The first prompt of a session picks the model; every prompt picks the effort. Tiers and levels follow Anthropic's [model selection matrix](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model#model-selection-matrix) and [effort levels](https://platform.claude.com/docs/en/build-with-claude/effort#effort-levels).
 
 It starts in **shadow** mode: it shows its pick in the status line but sends your requests unchanged. Switch to `auto` once `/jcmr-log` has convinced you; the evidence that Jev judges difficulty well is thin.
@@ -43,13 +47,13 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 
 ### How the model changes in a session
 
-Say your model is Sonnet. The model is decided once, at the first prompt (diagram 1); after that, only the events in diagram 2 change it.
+The model is decided once, at the first prompt (diagram 1); after that, only the events in diagram 2 change it. Which model each tier means is up to your settings.
 
 ```mermaid
 flowchart TD
-    P["First prompt of a session<br/>(your model: Sonnet)"] --> Q{"Does Jev give Opus<br/>0.6 or more?"}
-    Q -->|"Yes"| O["The session uses<br/>Opus from here on"]
-    Q -->|"No, or Jev<br/>errors / times out"| S["The session stays<br/>on Sonnet from here on"]
+    P["First prompt of a session<br/>(on the model you picked)"] --> Q{"Does the tier Jev picks<br/>get 0.6 or more?"}
+    Q -->|"Yes"| O["The session uses<br/>that tier's model<br/>from here on"]
+    Q -->|"No, or Jev<br/>errors / times out"| S["The session stays<br/>on your model"]
 ```
 
 ```mermaid
@@ -58,7 +62,7 @@ flowchart LR
     C -->|"/jcmr-pin X"| X["Switch to X"]
     C -->|"/model to another model"| U["Switch to that model;<br/>the mod stops switching"]
     C -->|"/jcmr-auto"| A["Pin and /model cleared,<br/>back to the first<br/>prompt's pick"]
-    C -->|"API doesn't answer as Opus,<br/>or doesn't answer at all"| S["Back to Sonnet,<br/>automatically"]
+    C -->|"API doesn't serve<br/>the chosen model"| S["Back to your model,<br/>automatically"]
 ```
 
 The diagrams show `auto`. In shadow mode the same decision is only shown in the status line.
