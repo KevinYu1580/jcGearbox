@@ -3,11 +3,11 @@
 
 import type { FsEntry } from 'claude-code'
 
-export const FAMILIES = ['haiku', 'sonnet', 'opus', 'fable'] as const
+const FAMILIES = ['haiku', 'sonnet', 'opus', 'fable'] as const
 export type Family = (typeof FAMILIES)[number]
 
 // Used when Claude Code's catalog cannot be read. Update on new releases.
-export const BUILTIN: Record<Family, string> = {
+const BUILTIN: Record<Family, string> = {
   haiku: 'claude-haiku-5-5',
   sonnet: 'claude-sonnet-5-5',
   opus: 'claude-opus-5-5',
@@ -44,12 +44,16 @@ export function newestCatalogFile(entries: readonly FsEntry[], surface: Surface)
   return served.sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.name
 }
 
+// The models of a catalog in the shape this mod reads, or none.
+function modelsOf(catalog: unknown): unknown[] | undefined {
+  const models = (catalog as { catalog?: { config?: { models?: unknown } } } | null)?.catalog?.config?.models
+  return Array.isArray(models) ? models : undefined
+}
+
 // The family's model in the "main" section of Claude Code's model picker,
 // skipping one that needs a newer Claude Code than `version`.
 export function catalogModel(catalog: unknown, family: Family, version: string): string | undefined {
-  const models = (catalog as { catalog?: { config?: { models?: unknown } } } | null)?.catalog?.config?.models
-  if (!Array.isArray(models)) return undefined
-  for (const m of models) {
+  for (const m of modelsOf(catalog) ?? []) {
     if (typeof m !== 'object' || m === null) continue
     const { id, short_name, section, min_claude_code_version, disabled } = m as Record<string, unknown>
     if (typeof id !== 'string' || section !== 'main' || disabled === true) continue
@@ -75,5 +79,8 @@ export function resolveModel(
   if (!family) return { id: name, source: 'config' }
   if (!ctx.firstParty) return undefined
   const fromCatalog = catalogModel(ctx.catalog, family, ctx.version)
-  return fromCatalog ? { id: fromCatalog + suffix, source: 'catalog' } : { id: BUILTIN[family] + suffix, source: 'builtin' }
+  if (fromCatalog) return { id: fromCatalog + suffix, source: 'catalog' }
+  // A catalog that offers the family nothing (no access to it, or a Claude
+  // Code too old for it) turns the tier off; one that can't be read falls back.
+  return modelsOf(ctx.catalog) ? undefined : { id: BUILTIN[family] + suffix, source: 'builtin' }
 }

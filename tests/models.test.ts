@@ -71,10 +71,16 @@ describe('newestCatalogFile', () => {
 describe('resolveModel', () => {
   const firstParty = { firstParty: true, catalog, version: '2.1.286' }
 
-  test('an alias follows the catalog, then the built-in table', () => {
+  test('an alias follows the catalog; only a catalog that cannot be read falls back to the built-in table', () => {
     expect(resolveModel('sonnet', firstParty)).toEqual({ id: 'claude-sonnet-5-5', source: 'catalog' })
     expect(resolveModel('Opus', firstParty)).toEqual({ id: 'claude-opus-5-5', source: 'catalog' })
-    expect(resolveModel('fable', firstParty)).toEqual({ id: 'claude-fable-5-1', source: 'builtin' })
+    expect(resolveModel('fable', { firstParty: true, catalog: undefined, version: '2.1.286' })).toEqual({ id: 'claude-fable-5-1', source: 'builtin' })
+    expect(resolveModel('fable', { firstParty: true, catalog: { catalog: {} }, version: '2.1.286' })).toEqual({ id: 'claude-fable-5-1', source: 'builtin' })
+  })
+
+  test('a catalog that offers a family no model turns its tier off', () => {
+    expect(resolveModel('fable', firstParty)).toBeUndefined()
+    expect(resolveModel('opus', { ...firstParty, version: '2.1.279' })).toBeUndefined()
   })
 
   test('the built-in table names the current Haiku', () => {
@@ -84,7 +90,7 @@ describe('resolveModel', () => {
   test('an alias with [1m] resolves as that alias and keeps the suffix', () => {
     expect(resolveModel('opus[1m]', firstParty)).toEqual({ id: 'claude-opus-5-5[1m]', source: 'catalog' })
     expect(resolveModel('Sonnet[1M]', firstParty)).toEqual({ id: 'claude-sonnet-5-5[1m]', source: 'catalog' })
-    expect(resolveModel('fable[1m]', firstParty)).toEqual({ id: 'claude-fable-5-1[1m]', source: 'builtin' })
+    expect(resolveModel('fable[1m]', { firstParty: true, version: '2.1.286' })).toEqual({ id: 'claude-fable-5-1[1m]', source: 'builtin' })
     expect(resolveModel('opus[1m]', { firstParty: false, catalog, version: '2.1.286' })).toBeUndefined()
     expect(resolveModel('claude-opus-5-5[1m]', firstParty)).toEqual({ id: 'claude-opus-5-5[1m]', source: 'config' })
   })
