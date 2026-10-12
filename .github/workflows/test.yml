@@ -7,13 +7,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Claude Code the mod supports (MIN_VERSION in hooks/register.ts), and the newest.
+        claude-code: ['2.1.286', latest]
+    env:
+      DISABLE_AUTOUPDATER: '1'
     steps:
       - uses: actions/checkout@v4
-      - name: Install Claude Code
+      - name: Install Claude Code ${{ matrix.claude-code }}
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash
+          curl -fsSL https://claude.ai/install.sh | bash -s ${{ matrix.claude-code }}
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: claude --version
-      - run: claude plugin validate .claude-plugin/plugin.json
-      - run: claude plugin validate .
+      - run: claude plugin validate --strict .claude-plugin/plugin.json
+      - run: claude plugin validate --strict .
       - run: claude plugin test .
