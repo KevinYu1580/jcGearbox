@@ -343,6 +343,10 @@ export const register: Register = (on, options) => {
 
 async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | undefined) {
   const { opt } = ctx
+  if (sub === 'log') {
+    const n = Number.parseInt(arg ?? '', 10)
+    return { text: await logText($, n > 0 ? n : 20) }
+  }
   const [id, r] = await joinedRecord($, ctx)
   if (sub === '' || sub === 'status') {
     const tiers = ctx.disabled ? undefined : (await resolution($, ctx, id)).tiers
@@ -382,10 +386,6 @@ async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | und
       delete r.userModel
     })
     return { text: `jcmr: model pinned to ${pinned.id} for this session (/jcmr-auto clears it).` }
-  }
-  if (sub === 'log') {
-    const n = Number.parseInt(arg ?? '', 10)
-    return { text: await logText($, n > 0 ? n : 20) }
   }
   return { text: USAGE }
 }
@@ -848,7 +848,7 @@ function readOptions(options: PluginOptions) {
   const num = (key: string) => options[key] as number
   return {
     apiKey: text('api_key'),
-    defaultMode: (text('default_mode') ?? 'shadow') as Mode,
+    defaultMode: text('default_mode') as Mode,
     tierModels: {
       low: text('low_model'),
       balanced: text('balanced_model'),
@@ -859,8 +859,8 @@ function readOptions(options: PluginOptions) {
     tierUpgradeProbability: num('tier_upgrade_probability'),
     signalThreshold: num('signal_threshold'),
     continuationThreshold: num('continuation_threshold'),
-    minEffort: (text('min_effort') ?? 'low') as Effort,
-    maxEffort: (text('max_effort') ?? 'max') as Effort,
+    minEffort: text('min_effort') as Effort,
+    maxEffort: text('max_effort') as Effort,
     jevModel: text('jev_model') || 'jev-latest',
     jevTimeoutMs: Math.round(num('jev_timeout_seconds') * 1000),
     sendAssistantTail: options.send_assistant_tail === true,
