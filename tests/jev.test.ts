@@ -108,9 +108,20 @@ describe('parseAnswers', () => {
     })
     expect(parseAnswers(text)).toEqual({
       tierProbabilities: { balanced: 0.2, strong: 0.8 },
-      signals: { effortScore: 2.4, continuation: 0.1, escalate: 0.05, highStakes: 0.9 },
+      signals: { effortScore: 2.4, effortConfidence: 0.7, continuation: 0.1, escalate: 0.05, highStakes: 0.9 },
       version: 'jev-1.13.0',
     })
+  })
+
+  test("keeps the effort answer's probability for each level and its confidence", () => {
+    const effort = { type: 'score', score: 1.9, probabilities: { '0': 0.1, '1': 0.2, '2': 0.4, '3': 0.2, '4': 0.1 }, confidence: 0.35 }
+    expect(parseAnswers(JSON.stringify({ answers: { effort } }))?.signals).toEqual({
+      effortScore: 1.9,
+      effortProbabilities: [0.1, 0.2, 0.4, 0.2, 0.1],
+      effortConfidence: 0.35,
+    })
+    const partial = { ...effort, probabilities: { '0': 0.5, '2': 0.5 } }
+    expect(parseAnswers(JSON.stringify({ answers: { effort: partial } }))?.signals.effortProbabilities).toBeUndefined()
   })
 
   test('drops malformed answers and rejects a body that is not an answer', () => {

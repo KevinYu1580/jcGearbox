@@ -9,6 +9,8 @@ export type Tier = (typeof TIERS)[number]
 
 export type Signals = {
   effortScore?: number
+  effortProbabilities?: number[] // Jev's probability for each level, low to max; kept for comparing ways to decide
+  effortConfidence?: number
   continuation?: number
   escalate?: number
   highStakes?: number

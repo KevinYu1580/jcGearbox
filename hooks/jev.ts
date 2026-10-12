@@ -1,6 +1,6 @@
 // The Jev request and its answers (https://docs.typesafe.ai/api.md). Pure.
 
-import { TIERS } from './policy.ts'
+import { EFFORTS, TIERS } from './policy.ts'
 import type { Signals, Tier } from './policy.ts'
 
 export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
@@ -168,8 +168,13 @@ export function parseAnswers(text: string): JevResult | undefined {
   if (typeof answers !== 'object' || answers === null) return undefined
 
   const signals: Signals = {}
-  const score = field(field(answers, 'effort'), 'score')
+  const effort = field(answers, 'effort')
+  const score = field(effort, 'score')
   if (isNumber(score)) signals.effortScore = score
+  const levels = EFFORTS.map((_, i) => field(field(effort, 'probabilities'), String(i)))
+  if (levels.every(isNumber)) signals.effortProbabilities = levels
+  const confidence = field(effort, 'confidence')
+  if (isNumber(confidence)) signals.effortConfidence = confidence
   const nouls = { continuation: 'continuation', escalate: 'escalate', highStakes: 'high_stakes' } as const
   for (const [key, id] of Object.entries(nouls)) {
     const p = field(field(answers, id), 'noul')
