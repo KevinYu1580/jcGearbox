@@ -76,7 +76,7 @@ For every prompt you type:
 flowchart TD
     P["You send a prompt"] --> C{"Only continuing<br/>the last task?"}
     C -->|"Yes"| K["Keep the last effort"]
-    C -->|"No"| J["Use Jev's effort score<br/>(low to max)"]
+    C -->|"No"| J["Use Jev's effort score<br/>(low to max), or the last<br/>effort if Jev isn't sure"]
     K --> F{"Saying the last<br/>attempt failed?"}
     J --> F
     F -->|"Yes"| U["One level up"]
@@ -88,7 +88,7 @@ flowchart TD
     M --> E(["This prompt's effort"])
 ```
 
-1. Start from Jev's effort score (`low` to `max`). If the prompt only continues the last task ("ok", "go on", pasted output), keep the last effort.
+1. Start from Jev's effort score (`low` to `max`). If the prompt only continues the last task ("ok", "go on", pasted output), keep the last effort. If Jev isn't sure of its score (confidence below `effort_min_confidence`, 0.7), keep the last effort too; on a session's first prompt, leave the effort as it is.
 2. If you say the last attempt failed, go up one level.
 3. If a mistake could do hard-to-undo damage (production, data deletion, migrations, auth, money, force-push), use at least `high`.
 4. Keep it between `min_effort` and `max_effort` (`max_effort` wins).
@@ -137,7 +137,7 @@ jcmr ▸ opus-5-5·high                                 auto: what was sent
 jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow: sent, then Jev's pick
 ```
 
-`jev …` is Jev's own pick, shown when it differs from what was sent: in shadow, or in auto after a pin, `/model` or an effort of your own. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr-pin opus` (in auto, after a complaint the effort can't answer), `built-in model table`, `Jev <error>`. In shadow they show once the first request has gone. The model and effort at the bottom of Claude Code are the session's own setting and don't follow the mod; the status line is what was actually sent.
+`jev …` is Jev's own pick, shown when it differs from what was sent: in shadow, or in auto after a pin, `/model` or an effort of your own. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr-pin opus` (in auto, after a complaint the effort can't answer), `Jev unsure` (Jev wasn't sure of its effort score, so it wasn't used), `built-in model table`, `Jev <error>`. In shadow they show once the first request has gone. The model and effort at the bottom of Claude Code are the session's own setting and don't follow the mod; the status line is what was actually sent.
 
 ## Settings
 
@@ -150,6 +150,7 @@ Set them with `/jcmr-setup`, `/plugin configure jev-cc-model-router@jev-cc-model
 | `low_model`, `balanced_model`, `strong_model`, `long_model` | `haiku`, `sonnet`, `opus`, `fable` | Alias (`opus[1m]` for 1M context) or full model id; `off` disables the tier |
 | `tier_upgrade_probability`, `tier_min_probability` | 0.5, 0.8 | Needed to move to a stronger, a weaker model |
 | `continuation_threshold` | 0.6 | Above this, a prompt keeps the last effort |
+| `effort_min_confidence` | 0.7 | Below this confidence, Jev's effort score isn't used and the last effort holds (a complaint or a risky task can still raise it); 0 always follows Jev |
 | `signal_threshold` | 0.7 | Above this, "last attempt failed" and "risky" count |
 | `min_effort`, `max_effort` | `low`, `max` | Range the mod sets; your own effort isn't capped |
 | `jev_model` | `jev-latest` | Pin a version such as `jev-1.13.0`, which the thresholds were tuned on |

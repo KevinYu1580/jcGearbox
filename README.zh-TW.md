@@ -76,7 +76,7 @@ flowchart LR
 flowchart TD
     P["你送出一個 prompt"] --> C{"只是接續<br/>上一件事？"}
     C -->|"是"| K["沿用上一回合的 effort"]
-    C -->|"否"| J["用 Jev 的 effort 分數<br/>（low 到 max）"]
+    C -->|"否"| J["用 Jev 的 effort 分數<br/>（low 到 max）；Jev 沒把握<br/>就沿用上一回合的"]
     K --> F{"在說上次<br/>失敗了？"}
     J --> F
     F -->|"是"| U["升一級"]
@@ -88,7 +88,7 @@ flowchart TD
     M --> E(["這個 prompt 的 effort"])
 ```
 
-1. 從 Jev 的 effort 分數出發（`low` 到 `max`）。如果只是接續上一件事（「好」、「繼續」、貼上輸出），沿用上一回合的 effort。
+1. 從 Jev 的 effort 分數出發（`low` 到 `max`）。如果只是接續上一件事（「好」、「繼續」、貼上輸出），沿用上一回合的 effort。Jev 對自己的分數沒把握時（信心度低於 `effort_min_confidence`，0.7），也沿用上一回合的；session 的第一個 prompt 則不改 effort。
 2. 你說上次失敗了，就升一級。
 3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `high`。
 4. 限制在 `min_effort` 和 `max_effort` 之間（以 `max_effort` 為準）。
@@ -137,7 +137,7 @@ jcmr ▸ opus-5-5·high                                 auto：實際送出的
 jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，接著是 Jev 的選擇
 ```
 
-`jev …` 是 Jev 自己的選擇，和實際送出的不同時才顯示：shadow 模式，或 auto 模式下用了 pin、`/model` 或你自己設的 effort。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。視情況加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr-pin opus`（auto 模式下，抱怨了但 effort 已經升不上去時）、`built-in model table`、`Jev <錯誤>`。shadow 模式下，這些在第一個請求送出後才出現。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，不會跟著 mod 變；實際送出的值以狀態列為準。
+`jev …` 是 Jev 自己的選擇，和實際送出的不同時才顯示：shadow 模式，或 auto 模式下用了 pin、`/model` 或你自己設的 effort。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。視情況加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr-pin opus`（auto 模式下，抱怨了但 effort 已經升不上去時）、`Jev unsure`（Jev 對 effort 分數沒把握，所以沒採用它的分數）、`built-in model table`、`Jev <錯誤>`。shadow 模式下，這些在第一個請求送出後才出現。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，不會跟著 mod 變；實際送出的值以狀態列為準。
 
 ## 設定
 
@@ -150,6 +150,7 @@ jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，�
 | `low_model`、`balanced_model`、`strong_model`、`long_model` | `haiku`、`sonnet`、`opus`、`fable` | 別名（`opus[1m]` 是 1M context）或完整 model ID；填 `off` 停用該 tier |
 | `tier_upgrade_probability`、`tier_min_probability` | 0.5、0.8 | 換成較強、較弱 model 需要的機率 |
 | `continuation_threshold` | 0.6 | 超過就算接續，沿用上一回合的 effort |
+| `effort_min_confidence` | 0.7 | Jev 對 effort 分數的信心度低於這個值時不採用它的分數，沿用上一回合的 effort（抱怨或高風險仍會調高）；設 0 就永遠照 Jev |
 | `signal_threshold` | 0.7 | 超過才算「上次失敗」和「有風險」 |
 | `min_effort`、`max_effort` | `low`、`max` | mod 設定的範圍；你自己設的 effort 不受限 |
 | `jev_model` | `jev-latest` | 填 `jev-1.13.0` 這類版本可固定；各門檻是在這一版上調的 |
