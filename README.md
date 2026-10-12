@@ -103,7 +103,7 @@ flowchart TD
 | Haiku 4.5 and older models | no effort | — |
 | A model id the mod doesn't know | every level | `high` |
 
-Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the session's model and the last effort; subagents, `claude -p` and Agent SDK runs are left alone (with `fork_follows_route` on, in auto a fork of the main conversation follows the session's model, except one made in a slash command's turn on the command's own model). A slash command or skill that sets its own model or effort keeps it for its turn. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode` when your prompt has the keyword (pasted text counts too, and whether workflows are on isn't checked). If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why. A request waits for Jev only when its answer can change it: never in shadow, nor after the first prompt once the effort is yours or the model takes none (slash commands still wait). Then only a first reply quicker than Jev waits for its answer, up to the timeout.
+Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the session's model and the last effort; subagents, `claude -p` and Agent SDK runs are left alone (with `fork_follows_route` on, in auto a fork of the main conversation follows the session's model, except one made in a slash command's turn on the command's own model). A slash command or skill that sets its own model or effort keeps it for its turn. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode` in `/jcmr-log` when your prompt has the keyword (pasted text counts too, and whether workflows are on isn't checked). If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why. A request waits for Jev only when its answer can change it: never in shadow, nor after the first prompt once the effort is yours or the model takes none (slash commands still wait). Then only a first reply quicker than Jev waits for its answer, up to the timeout.
 
 ## Overriding it
 
@@ -133,11 +133,11 @@ Picking the session's original model again in the picker isn't a switch to Claud
 ## Status line
 
 ```
-jcmr ▸ opus-5-5·high                                 auto: what was sent
-jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow: sent, then Jev's pick
+jcmr ▸ opus-5-5·high           auto: what was sent
+jcmr(shadow) ▸ opus-5-5·high   shadow: Jev's pick
 ```
 
-`jev …` is Jev's own pick, shown when it differs from what was sent: in shadow, or in auto after a pin, `/model` or an effort of your own. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr-pin opus` (in auto, after a complaint the effort can't answer), `Jev unsure` (Jev wasn't sure of its effort score, so it wasn't used), `built-in model table`, `Jev <error>`. In shadow they show once the first request has gone. The model and effort at the bottom of Claude Code are the session's own setting and don't follow the mod; the status line is what was actually sent.
+In auto it's the model and effort actually sent; in shadow it's Jev's pick, and the request goes as the session has it. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Only a Jev error adds a note, `Jev <error>`; the rest (a pin, `/model`, an effort of your own, `ultracode`, `Jev unsure`) is in `/jcmr-log`, and `/jcmr-status` shows the whole state. The model and effort at the bottom of Claude Code are the session's own setting, which shadow sends as it is and auto may rewrite; in auto, the status line is what was actually sent.
 
 ## Settings
 
@@ -159,7 +159,7 @@ Set them with `/jcmr-setup`, `/plugin configure jev-cc-model-router@jev-cc-model
 | `assistant_tail_chars` | 1000 | How much of it (100–8000; ~700 tokens per 1000) |
 | `fork_follows_route` | off | In auto, a subagent forked from the main conversation runs on the session's routed model, so it reads the conversation's prompt cache |
 
-Aliases resolve only with an Anthropic login or API key; with an API key Claude Code keeps no model list, so they come from the mod's built-in table and the status line says `built-in model table`. An alias your model list doesn't offer (no access to Fable, say) turns its tier off. On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids. A session that picks Haiku stays on it until you pin another model.
+Aliases resolve only with an Anthropic login or API key; with an API key Claude Code keeps no model list, so they come from the mod's built-in table, which `/jcmr-status` marks `built-in`. An alias your model list doesn't offer (no access to Fable, say) turns its tier off. On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids. A session that picks Haiku stays on it until you pin another model.
 
 ## Privacy
 

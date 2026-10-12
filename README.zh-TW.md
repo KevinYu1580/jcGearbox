@@ -103,7 +103,7 @@ flowchart TD
 | Haiku 4.5 和更舊的 model | 不支援 effort | — |
 | mod 不認得的 model ID | 全部等級 | `high` |
 
-不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理、`claude -p` 和 Agent SDK 的執行一律不動（開啟 `fork_follows_route` 時，auto 模式下從主對話 fork 出去的子代理跟著 session 的 model；slash command 自帶 model 的那一回合 fork 出去的，維持 command 的 model）。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。只有 Jev 的答案能改變請求時，請求才會等它：shadow 從不等；第一個 prompt 之後，effort 由你決定或 model 不支援 effort 時也不等（slash command 仍會等）。這時只有比 Jev 還快回來的第一則回覆，會等它的答案，最多到逾時。
+不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理、`claude -p` 和 Agent SDK 的執行一律不動（開啟 `fork_follows_route` 時，auto 模式下從主對話 fork 出去的子代理跟著 session 的 model；slash command 自帶 model 的那一回合 fork 出去的，維持 command 的 model）。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時，在 `/jcmr-log` 標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。只有 Jev 的答案能改變請求時，請求才會等它：shadow 從不等；第一個 prompt 之後，effort 由你決定或 model 不支援 effort 時也不等（slash command 仍會等）。這時只有比 Jev 還快回來的第一則回覆，會等它的答案，最多到逾時。
 
 ## 手動覆寫
 
@@ -133,11 +133,11 @@ flowchart TD
 ## 狀態列
 
 ```
-jcmr ▸ opus-5-5·high                                 auto：實際送出的
-jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，接著是 Jev 的選擇
+jcmr ▸ opus-5-5·high           auto：實際送出的
+jcmr(shadow) ▸ opus-5-5·high   shadow：Jev 的選擇
 ```
 
-`jev …` 是 Jev 自己的選擇，和實際送出的不同時才顯示：shadow 模式，或 auto 模式下用了 pin、`/model` 或你自己設的 effort。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。視情況加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr-pin opus`（auto 模式下，抱怨了但 effort 已經升不上去時）、`Jev unsure`（Jev 對 effort 分數沒把握，所以沒採用它的分數）、`built-in model table`、`Jev <錯誤>`。shadow 模式下，這些在第一個請求送出後才出現。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，不會跟著 mod 變；實際送出的值以狀態列為準。
+auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcmr-log`，完整狀態看 `/jcmr-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
 
 ## 設定
 
@@ -159,7 +159,7 @@ jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，�
 | `assistant_tail_chars` | 1000 | 送多少字（100–8000；每 1000 字約 700 tokens） |
 | `fork_follows_route` | 關 | auto 模式下，從主對話 fork 出去的子代理也用 session 路由後的 model，讀得到對話的 prompt cache |
 
-別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，狀態列會顯示 `built-in model table`。你的 model 清單沒有提供的別名（例如沒有 Fable 權限）會讓那個 tier 停用。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
+別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，`/jcmr-status` 會標示 `built-in`。你的 model 清單沒有提供的別名（例如沒有 Fable 權限）會讓那個 tier 停用。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
 
 ## 隱私
 
