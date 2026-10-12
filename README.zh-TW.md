@@ -156,7 +156,7 @@ jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，�
 | `send_assistant_tail` | 關（建議開） | 一併送出 Claude 上一則回答的結尾 |
 | `assistant_tail_chars` | 1000 | 送多少字（100–8000；每 1000 字約 700 tokens） |
 
-別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，狀態列會顯示 `built-in model table`。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
+別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，狀態列會顯示 `built-in model table`。你的 model 清單沒有提供的別名（例如沒有 Fable 權限）會讓那個 tier 停用。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
 
 ## 隱私
 

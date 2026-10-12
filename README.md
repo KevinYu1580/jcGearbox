@@ -156,7 +156,7 @@ Set them with `/jcmr-setup`, `/plugin configure jev-cc-model-router@jev-cc-model
 | `send_assistant_tail` | off (recommended on) | Also send the end of Claude's last reply |
 | `assistant_tail_chars` | 1000 | How much of it (100–8000; ~700 tokens per 1000) |
 
-Aliases resolve only with an Anthropic login or API key; with an API key Claude Code keeps no model list, so they come from the mod's built-in table and the status line says `built-in model table`. On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids. A session that picks Haiku stays on it until you pin another model.
+Aliases resolve only with an Anthropic login or API key; with an API key Claude Code keeps no model list, so they come from the mod's built-in table and the status line says `built-in model table`. An alias your model list doesn't offer (no access to Fable, say) turns its tier off. On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids. A session that picks Haiku stays on it until you pin another model.
 
 ## Privacy
 
