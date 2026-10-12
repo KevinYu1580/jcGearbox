@@ -103,7 +103,7 @@ flowchart TD
 | Haiku 4.5 和更舊的 model | 不支援 effort | — |
 | mod 不認得的 model ID | 全部等級 | `high` |
 
-不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理、`claude -p` 和 Agent SDK 的執行一律不動（開啟 `fork_follows_route` 時，auto 模式下從主對話 fork 出去的子代理跟著 session 的 model）。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。只有 Jev 的答案能改變請求時，請求才會等它：shadow 從不等；第一個 prompt 之後，effort 由你決定或 model 不支援 effort 時也不等（slash command 仍會等）。這時只有比 Jev 還快回來的第一則回覆，會等它的答案，最多到逾時。
+不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理、`claude -p` 和 Agent SDK 的執行一律不動（開啟 `fork_follows_route` 時，auto 模式下從主對話 fork 出去的子代理跟著 session 的 model；slash command 自帶 model 的那一回合 fork 出去的，維持 command 的 model）。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。只有 Jev 的答案能改變請求時，請求才會等它：shadow 從不等；第一個 prompt 之後，effort 由你決定或 model 不支援 effort 時也不等（slash command 仍會等）。這時只有比 Jev 還快回來的第一則回覆，會等它的答案，最多到逾時。
 
 ## 手動覆寫
 

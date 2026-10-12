@@ -196,11 +196,15 @@ export const register: Register = (on, options) => {
     if (e.agentId) {
       // A fork of the main conversation shares it, so on the session's routed
       // model it reads the conversation's prompt cache (fork_follows_route).
-      // Any other subagent, and a fork's step on the engine's fallback, is left alone.
+      // Any other subagent, a fork that starts on another model than the
+      // session's own (one made in a command's turn, on the command's model),
+      // and a fork's step on the engine's fallback, is left alone.
       if (!opt.forkFollowsRoute || ctx.disabled) return yield* next(e)
       if (!ctx.forks.has(e.agentId)) {
         const agent = (await $.agent.list()).find(a => a.id === e.agentId)
-        ctx.forks.set(e.agentId, agent?.type === 'fork' && !agent.parentId ? e.model : null)
+        const own = ctx.engineModels.get(await $.session.id())
+        const routed = agent?.type === 'fork' && !agent.parentId && (own === undefined || sameModel(e.model, own))
+        ctx.forks.set(e.agentId, routed ? e.model : null)
       }
       if (ctx.forks.get(e.agentId) !== e.model || !(await apiKey($, opt))) return yield* next(e)
       const [, r] = await serial(ctx, () => record($))

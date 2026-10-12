@@ -612,6 +612,17 @@ describe('fork_follows_route', () => {
     expect(w.steps.slice(1).map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-haiku-4-5-20251001'])
   })
 
+  test("a fork made in a command's turn on the command's own model keeps that model", FOLLOW, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const fork = await spawnAgent($)
+    await drain($.turn.step(forkStep(fork, 'claude-haiku-4-5-20251001')))
+    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
+    await drain($.turn.step(forkStep(await spawnAgent($))))
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
   test('without a key a fork is left alone, as the main loop is', FOLLOW, async ($, on) => {
     const w = world(on, { reply: STRONG, noKey: true })
     await start($)
