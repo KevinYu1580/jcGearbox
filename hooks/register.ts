@@ -10,6 +10,7 @@ import type { Effort, Tier } from './policy.ts'
 const MIN_VERSION = '2.1.286'
 const KEEP = 200
 const CONTEXT_CHARS = 1000
+const FORK_REPLY_CHARS = 200 // a reply at least this long names the one session that wrote it
 // Prompts the person sent: typed, through the desktop app or an SDK host,
 // Remote Control, or Slack. Anything else (a task notification, a schedule,
 // another session) continues the session as it is and never reaches Jev.
@@ -75,10 +76,19 @@ type Ctx = {
   submitted: { text: string; isUser: boolean }[]
   turns: Map<string, Turn>
   logged: number
+  answered: Set<string> // models a rewritten request got an answer from, since their last turn died unanswered
+  joined: Set<string> // sessions that resume or fork a conversation already under way
 }
 
 export const register: Register = (on, options) => {
-  const ctx: Ctx = { opt: readOptions(options), submitted: [], turns: new Map(), logged: 0 }
+  const ctx: Ctx = {
+    opt: readOptions(options),
+    submitted: [],
+    turns: new Map(),
+    logged: 0,
+    answered: new Set(),
+    joined: new Set(),
+  }
   const { opt, submitted, turns } = ctx
 
   on('session.start', async ($, e, next) => {
@@ -106,6 +116,8 @@ export const register: Register = (on, options) => {
   // A /clear, a /resume or a fork goes on under another session id with no
   // session.start.
   on('classic.SessionStart', async ($, e, next) => {
+    // The id the session goes on under: $.session.id() can still be the one it leaves.
+    if (e.source === 'resume' || e.source === 'fork') ctx.joined.add(e.session_id)
     if (e.source === 'clear' || e.source === 'resume' || e.source === 'fork') {
       await prune($)
       await showMode($, ctx)
@@ -163,9 +175,14 @@ export const register: Register = (on, options) => {
     if (rewritesModel && result.usage && !sameModel(result.usage.model, model)) {
       turn.plan = { ...turn.plan, model: undefined }
       await drop($, model, `${label(result.usage.model)} answered`)
+    } else if (rewritesModel && result.stopReason === 'refusal') {
+      // A model that declines the conversation would decline it again.
+      turn.plan = { ...turn.plan, model: undefined }
+      await drop($, model, 'refused')
     } else if (rewritesModel) {
       const noResponse = !result.usage && result.stopReason === null && !next.signal.aborted
       turn.unanswered = noResponse ? model : undefined
+      if (result.usage) ctx.answered.add(model)
     }
     return result
   })
@@ -176,13 +193,24 @@ export const register: Register = (on, options) => {
       turns.delete(e.turnId)
       // A request with no response is the model's doing (an unknown id, no
       // access) only when the turn died of it: the engine retries others
-      // itself, a context overflow after compacting, say.
-      if (turn?.unanswered && e.reason === 'error') await drop($, turn.unanswered, 'no response')
-      if (opt.sendAssistantTail && e.answer && !ctx.disabled) {
+      // itself, a context overflow after compacting, say. A model that has
+      // answered since its last such turn is given one more: an overload or
+      // a 5xx passes; twice in a row is the model's doing.
+      if (turn?.unanswered && e.reason === 'error' && !ctx.answered.delete(turn.unanswered)) {
+        await drop($, turn.unanswered, 'no response')
+      }
+      if (e.answer && !ctx.disabled) {
         const [id, r] = await record($)
         if ((r.mode ?? opt.defaultMode) !== 'off' && (await apiKey($, opt))) {
-          r.replyTail = e.answer.slice(-opt.tailChars)
-          await save($, id, r)
+          // A fork's transcript ends with this reply: it names the session to go on from.
+          if (r.decided && e.answer.trim().length >= FORK_REPLY_CHARS) {
+            await $.store.set(`fork:${await fingerprint(e.answer)}`, id)
+            await trim($, 'fork:', KEEP)
+          }
+          if (opt.sendAssistantTail) {
+            r.replyTail = e.answer.slice(-opt.tailChars)
+            await save($, id, r)
+          }
         }
       }
     }
@@ -192,7 +220,8 @@ export const register: Register = (on, options) => {
   // A switch after the session's model was chosen is the person overriding
   // it; one before (an app applying its picker at start) is the starting point.
   // PostModelSwitch: only a switch that took effect, and only the person's
-  // (not a fallback, not a resume restoring the model).
+  // (not a fallback or a plan mode toggled under opusplan, not a resume
+  // restoring the model).
   on('classic.PostModelSwitch', async ($, e, next) => {
     const byPerson = e.source === 'command' || e.source === 'picker' || e.source === 'sdk'
     const [id, r] = await record($)
@@ -219,7 +248,7 @@ export const register: Register = (on, options) => {
 
 async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | undefined) {
   const { opt } = ctx
-  const [id, r] = await record($)
+  const [id, r] = await joinedRecord($, ctx)
   if (sub === '' || sub === 'status') return { text: report(r, opt.defaultMode) }
   // Back on drops the session's own mode (auto when the default is off) and
   // keeps any pin: it undoes /jcmr-off, not /model or /jcmr-pin.
@@ -295,7 +324,7 @@ async function resolution($: EngineInterface, ctx: Ctx, session: string) {
 
 async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effort | number | undefined, turn: Turn, signal: AbortSignal) {
   const { opt } = ctx
-  let [id, r] = await record($)
+  let [id, r] = await joinedRecord($, ctx)
   const mode = r.mode ?? opt.defaultMode
   if (mode === 'off') {
     $.ui.status(undefined)
@@ -347,7 +376,8 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
     const error = asked.error
     const decided = decideEffort({
       signals: asked.result?.signals,
-      previous: r.effort,
+      // Before the router has decided an effort, the last turn ran at the engine's.
+      previous: r.effort ?? (asked.result && isEffort(r.rawEffort) ? r.rawEffort : undefined),
       isFirstTurn: first,
       threshold: opt.signalThreshold,
       continuationThreshold: opt.continuationThreshold,
@@ -426,6 +456,42 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
 function current(r: SessionRecord): string | undefined {
   const model = r.pin ?? (r.userModel ? undefined : r.model)
   return model && !r.badModels?.includes(model) ? model : undefined
+}
+
+// The session's record. A resumed or forked conversation it has none of is
+// not a new one: a fork goes on as the session it came from; any other keeps
+// its model rather than one picked from a prompt in mid-conversation. Done
+// once, before a command or the first decision touches the record.
+async function joinedRecord($: EngineInterface, ctx: Ctx): Promise<[string, SessionRecord]> {
+  const [id, r] = await record($)
+  if (r.decided || !ctx.joined.delete(id)) return [id, r]
+  const joined = { ...(await parentRecord($, id)), ...r, decided: true }
+  await save($, id, joined)
+  return [id, joined]
+}
+
+// The record of the session a fork came from, named by the newest of the
+// transcript's long replies that a session wrote down (the last 20 tried); the
+// engine's model and effort of its last turn stay behind.
+async function parentRecord($: EngineInterface, id: string): Promise<SessionRecord | undefined> {
+  const known = new Set((await $.store.keys()).filter(k => k.startsWith('fork:')))
+  const replies = (await $.session.messages()).filter(m => m.role === 'assistant' && m.text.trim().length >= FORK_REPLY_CHARS)
+  for (const reply of replies.slice(-20).reverse()) {
+    const key = `fork:${await fingerprint(reply.text)}`
+    if (!known.has(key)) continue
+    const parent = await $.store.get(key)
+    if (typeof parent !== 'string' || parent === id) return undefined
+    const found = (await $.store.get(`session:${parent}`)) as SessionRecord | undefined
+    return found?.decided ? { ...found, rawEffort: undefined, rawModel: undefined, last: undefined } : undefined
+  }
+  return undefined
+}
+
+// A short hash of a reply's end, which a fork's transcript repeats as it was.
+async function fingerprint(text: string): Promise<string> {
+  const end = new TextEncoder().encode(text.trim().slice(-FORK_REPLY_CHARS))
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', end))
+  return [...hash.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 // The effort the last turn ran at: the person's own once they pinned it.

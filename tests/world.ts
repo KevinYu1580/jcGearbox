@@ -15,6 +15,7 @@ export type World = {
   listed: string[] // the directories the plugin listed
   registered: string[] // the slash commands the plugin registered
   session: string // what $.session.id() answers; a test may change it
+  messages: { role: 'user' | 'assistant'; text: string; toolUses: [] }[] // what $.session.messages() answers
   clock: ReturnType<typeof mock.clock>
 }
 export type WorldOptions = {
@@ -27,6 +28,8 @@ export type WorldOptions = {
   answeredAs?: string // the model the API says answered every request
   noResponseFrom?: string // a request naming this model gets no response at all
   noResponseOnce?: string // only the first request naming this model gets no response
+  noResponseAt?: number[] // the requests at these positions (from 0, across the test) get no response
+  refusalFrom?: string // a request naming this model is declined (stop reason 'refusal')
   catalog?: unknown // null: no catalog file
   thirdParty?: boolean // $.session.authorize() answers null
   env?: Record<string, string>
@@ -58,6 +61,7 @@ export function world(on: On, o: WorldOptions = {}): World {
     listed: [],
     registered: [],
     session: 'session-1',
+    messages: [],
     clock: mock.clock(on),
   }
   const env: Record<string, string> = {
@@ -83,6 +87,7 @@ export function world(on: On, o: WorldOptions = {}): World {
   const catalog = o.catalog === undefined ? CATALOG : o.catalog
   const dir = `${env.CLAUDE_CONFIG_DIR ?? `${env.HOME}/.claude`}/cache/model-catalog`
   on('session.id', () => ({ value: w.session }))
+  on('session.messages', () => ({ value: w.messages }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.286', base: o.version ?? '2.1.286' } }))
   on('session.authorize', () => ({ value: o.thirdParty ? null : { handle: 'h', kind: 'bearer' as const } }))
   on('fs.list', ($, e) => {
@@ -111,20 +116,29 @@ export function world(on: On, o: WorldOptions = {}): World {
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('classic.SessionStart', () => ({}))
-  on('prompt.submit', ($, e) => ({ text: e.text }))
+  // As in the engine, the turn starts before the submit settles.
+  on('prompt.submit', async ($, e) => {
+    const begin = starting
+    starting = undefined
+    await begin?.()
+    return { text: e.text }
+  })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('classic.PostModelSwitch', () => ({}))
   on('turn.step', async function* ($, e) {
     w.steps.push(e.effort === undefined ? { model: e.model } : { model: e.model, effort: e.effort })
-    const silent = o.noResponseFrom === e.model || (o.noResponseOnce === e.model && !once.has(e.model))
+    const silent =
+      o.noResponseFrom === e.model ||
+      (o.noResponseOnce === e.model && !once.has(e.model)) ||
+      !!o.noResponseAt?.includes(w.steps.length - 1)
     if (o.noResponseOnce === e.model) once.add(e.model)
     return {
       turnId: e.turnId,
       index: e.index,
       answer: silent ? '' : 'done',
       toolUses: [],
-      stopReason: silent ? null : ('end_turn' as const),
+      stopReason: silent ? null : o.refusalFrom === e.model ? ('refusal' as const) : ('end_turn' as const),
       usage: silent
         ? null
         : {
@@ -158,9 +172,16 @@ export type TurnOptions = {
   reason?: string // why the turn ended (default 'answer'; 'error' when an API error ended it)
 }
 
+// The turn.start the next prompt.submit fires on its way down.
+let starting: (() => Promise<unknown>) | undefined
+
 export async function turn($: any, text: string, turnId: string, o: TurnOptions = {}) {
-  if (o.submit !== false) await $.prompt.submit({ text, wait: false, origin: { kind: o.origin ?? 'sdk' } })
-  await $.turn.start({ text: o.startText ?? text, turnId })
+  const begin = () => $.turn.start({ text: o.startText ?? text, turnId })
+  if (o.submit === false) await begin()
+  else {
+    starting = begin
+    await $.prompt.submit({ text, wait: false, origin: { kind: o.origin ?? 'sdk' } })
+  }
   const models = o.models ?? ['claude-sonnet-5-5']
   for (const [index, model] of models.entries()) {
     const effort = o.effort === null ? undefined : (o.effort ?? 'high')

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, CONTINUE, STRONG, command, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
+import { AUTO, CONTINUE, EASY, STRONG, command, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
 import type { World } from './world.ts'
 
 const keys = (w: World, prefix: string) => [...w.db.keys()].filter(k => k.startsWith(prefix))
@@ -63,6 +63,22 @@ describe('session decisions', () => {
     expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
   })
 
+  test('after a failed first turn, a continuation keeps the effort the engine ran it at', AUTO, async ($, on) => {
+    const w = world(on, { reply: answers('x', CONTINUE) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok go ahead', 't2')
+    expect(w.steps.map(s => s.effort)).toEqual(['high', 'high'])
+  })
+
+  test('a Jev error before any effort was decided leaves the engine effort as it is', { options: { default_mode: 'auto', max_effort: 'xhigh' } }, async ($, on) => {
+    const w = world(on, { reply: 'x' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { effort: 'max' })
+    await turn($, 'ok', 't2', { effort: 'max' })
+    expect(w.steps.map(s => s.effort)).toEqual(['max', 'max'])
+  })
+
   test('a later Jev error keeps the model and the previous effort, and says why', AUTO, async ($, on) => {
     const w = world(on, { reply: answers(STRONG, 'x') })
     await start($)
@@ -89,6 +105,97 @@ describe('session decisions', () => {
     await turn($, 'go on', 't3', { models: ['claude-haiku-4-5-20251001'] })
     expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
     expect((await command($, '')).text).toContain('your choice (/model)')
+  })
+})
+
+const REPLY = 'The sync engine now batches writes per peer. '.repeat(6)
+const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] as [] })
+const forked = (...more: World['messages']) => [said('user', 'redesign the sync engine'), said('assistant', REPLY), ...more]
+
+// As the engine does: SessionStart names the new id, then the session goes on under it.
+async function goOn($: any, w: World, source: 'resume' | 'fork', messages: World['messages'] = []) {
+  await $.classic.SessionStart({ source, session_id: 'session-2' })
+  w.session = 'session-2'
+  w.messages = messages
+}
+
+describe('a conversation that goes on under a new id', () => {
+  test('a resumed conversation with no record of it keeps the model it has', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await goOn($, w, 'resume')
+    await turn($, 'continue', 't1')
+    expect(w.asked[0].questions.tier).toBeUndefined()
+    expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5'])
+  })
+
+  test('a fork goes on as the session it came from', AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, (body: any) => (body.questions.tier ? EASY : CONTINUE)) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await goOn($, w, 'fork', forked(said('user', 'now the tests')))
+    await turn($, 'now the tests', 't2')
+    expect(w.asked[1].questions.tier).toBeUndefined()
+    expect(w.asked[1].state.previous_prompt).toBe('redesign the sync engine')
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+  })
+
+  test("a fork finds its session past a long reply that names none", AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE, (body: any) => (body.questions.tier ? EASY : CONTINUE)) })
+    const between = 'Running the whole suite first, then the flaky sync tests one at a time. '.repeat(3)
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await turn($, 'run the tests', 't2', { answer: 'All green.' })
+    await goOn(
+      $,
+      w,
+      'fork',
+      forked(said('user', 'run the tests'), said('assistant', between), said('assistant', 'All green.'), said('user', 'now the docs')),
+    )
+    await turn($, 'now the docs', 't3')
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test("a fork's /jcmr-auto before its first prompt clears the pin it carries over", AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await command($, 'pin sonnet')
+    await goOn($, w, 'fork', forked(said('user', 'now the tests')))
+    await command($, 'auto')
+    await turn($, 'now the tests', 't2')
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test("a fork's own /jcmr-off before its first prompt wins over the mode it carries over", async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE) })
+    await start($)
+    await command($, 'auto')
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await goOn($, w, 'fork', forked(said('user', 'now the tests')))
+    await command($, 'off')
+    await turn($, 'now the tests', 't2')
+    expect(w.asked).toHaveLength(1)
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
+  test("a fork does not take its engine effort for a change from the last one of its session", AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY, effort: 'medium' })
+    await goOn($, w, 'fork', forked(said('user', 'now the tests')))
+    await turn($, 'now the tests', 't2', { effort: 'high' })
+    expect(w.status.at(-1)).not.toContain('effort pinned')
+  })
+
+  test('keeps no more than 200 replies to know forks by, dropping the oldest', AUTO, async ($, on) => {
+    const store: Record<string, unknown> = {}
+    for (let i = 0; i < 200; i++) store[`fork:${String(i).padStart(16, '0')}`] = 'old'
+    const w = world(on, { reply: STRONG, store })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    expect(keys(w, 'fork:')).toHaveLength(200)
+    expect(w.db.has('fork:0000000000000000')).toBe(false)
   })
 })
 

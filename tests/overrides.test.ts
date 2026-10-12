@@ -42,7 +42,8 @@ describe('model switches', () => {
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
   })
 
-  test("the engine's fallback switch is not the person's", AUTO, async ($, on) => {
+  // 'auto' is also a plan mode toggled under opusplan or haiku: not the person's.
+  test("the engine's own switch is not the person's", AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
@@ -255,6 +256,35 @@ describe('a model that is not served', () => {
     await turn($, 'ok', 't2')
     expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5'])
     expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
+  test('a model that declines a rewritten request is not switched to again', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, refusalFrom: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'refusal' })
+    expect(w.status.at(-1)).toBe('jcmr: opus-5-5 was not used (refused); not switching to it again')
+    await turn($, 'ok', 't2')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+  })
+
+  test('a model that has answered is not blamed when a later request of it gets no response', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseAt: [1] })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2', { reason: 'error' })
+    await turn($, 'go on', 't3')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5'])
+    expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
+  test('a model that has answered is blamed once it gets no response twice in a row', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseAt: [1, 2] })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2', { reason: 'error' })
+    await turn($, 'try again', 't3', { reason: 'error' })
+    await turn($, 'go on', 't4')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
   })
 
   test('a turn that ended otherwise than in an error blames no model', AUTO, async ($, on) => {
