@@ -133,6 +133,40 @@ describe('decideEffort', () => {
     expect(at({ highStakes: 0.7 }).effort).toBe('low')
   })
 
+  test('when Jev is unsure of the effort, the last effort holds, and a first turn changes nothing', () => {
+    const unsure = { effortScore: 0, effortConfidence: 0.5 }
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: 'xhigh', signals: unsure })).toEqual({
+      effort: 'xhigh',
+      escalated: false,
+      unsure: true,
+    })
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: true, previous: undefined, signals: unsure }).effort).toBeUndefined()
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: 'xhigh', signals: { ...unsure, effortConfidence: 0.7 } }).effort).toBe('low')
+    expect(decideEffort({ ...base, minConfidence: 0, isFirstTurn: false, previous: 'xhigh', signals: unsure }).effort).toBe('low')
+    expect(decideEffort({ ...base, isFirstTurn: false, previous: 'xhigh', signals: { effortScore: 0 } }).effort).toBe('low')
+  })
+
+  test('with no effort to hold, an unsure turn still counts a complaint and lifts a risky task to high', () => {
+    const unsure = { effortScore: 0, effortConfidence: 0.3 }
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: undefined, signals: { ...unsure, escalate: 0.9 } })).toEqual({
+      effort: undefined,
+      escalated: true,
+      unsure: true,
+    })
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: true, previous: undefined, signals: { ...unsure, highStakes: 0.95 } }).effort).toBe('high')
+    expect(decideEffort({ ...base, minConfidence: 0.7, maxEffort: 'medium', isFirstTurn: true, previous: undefined, signals: { ...unsure, highStakes: 0.95 } }).effort).toBe('medium')
+  })
+
+  test('an unsure effort still goes up on a complaint and to high on a risk, and a continuation still keeps it', () => {
+    const unsure = { effortScore: 0, effortConfidence: 0.3 }
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: 'medium', signals: { ...unsure, escalate: 0.9 } }).effort).toBe('high')
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: 'low', signals: { ...unsure, highStakes: 0.9 } }).effort).toBe('high')
+    expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: 'max', signals: { ...unsure, continuation: 0.95 } })).toEqual({
+      effort: 'max',
+      escalated: false,
+    })
+  })
+
   test('without an answer the first turn changes nothing and later turns keep the previous effort', () => {
     expect(decideEffort({ ...base, isFirstTurn: true, previous: undefined, signals: undefined }).effort).toBeUndefined()
     expect(decideEffort({ ...base, isFirstTurn: false, previous: 'high', signals: undefined }).effort).toBe('high')

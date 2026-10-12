@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, EASY, STRONG, SURE_EASY, command, commandText, drain, firstStrongThenContinue, run, spawnAgent, start, switchModel, turn, world } from './world.ts'
+import { AUTO, CONTINUE, EASY, STRONG, SURE_EASY, command, commandText, drain, firstStrongThenContinue, run, spawnAgent, start, switchModel, turn, world } from './world.ts'
 
 describe('auto mode', () => {
   test('a hard first prompt moves every step of the session to the strong model', AUTO, async ($, on) => {
@@ -535,6 +535,41 @@ describe('/jcmr-status off a first-party login', () => {
   })
 })
 
+describe('an unsure Jev', () => {
+  const SURE_XHIGH = { answers: { ...STRONG.answers, effort: { type: 'score', score: 3, confidence: 0.9 } } }
+  const UNSURE = { answers: { ...CONTINUE.answers, continuation: { type: 'noul', noul: 0.1 }, effort: { type: 'score', score: 0.2, confidence: 0.4 } } }
+  const unsure = (body: any) => (body.questions.tier ? SURE_XHIGH : UNSURE)
+
+  test('keeps the effort the last turn ran at, and says so', AUTO, async ($, on) => {
+    const w = world(on, { reply: unsure })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'now the tests', 't2')
+    expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·xhigh · Jev unsure')
+    expect((await command($, 'log 1')).text).toContain('opus-5-5·xhigh · Jev unsure')
+  })
+
+  test('says nothing of it where the effort is the person\'s or the model takes none', AUTO, async ($, on) => {
+    const w = world(on, { reply: unsure })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'now the tests', 't2', { effort: 'max' })
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·max · jev opus-5-5·xhigh · effort pinned')
+    await command($, 'pin haiku')
+    await turn($, 'and the docs', 't3', { effort: 'max' })
+    expect(w.status.at(-1)).not.toContain('Jev unsure')
+  })
+
+  test('effort_min_confidence sets how sure Jev must be; 0 always follows it', { options: { default_mode: 'auto', effort_min_confidence: 0 } }, async ($, on) => {
+    const w = world(on, { reply: unsure })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'now the tests', 't2')
+    expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'low'])
+  })
+})
+
 describe('settings', () => {
   test('min_effort is the lowest effort set', { options: { default_mode: 'auto', min_effort: 'medium' } }, async ($, on) => {
     const w = world(on, { reply: EASY })
@@ -701,7 +736,7 @@ describe('/jcmr-stats', () => {
       jev: { signals: { effortScore: 1 } }, effort: 'medium', sent: { model: 'claude-opus-5-5', effort: 'xhigh' },
     },
     'log:3:session-1:2': {
-      at: at(9), mode: 'auto', first: false, prompt: 'c', promptLength: 1, session: 'session-1', jevMs: 200,
+      at: at(9), mode: 'auto', first: false, prompt: 'c', promptLength: 1, session: 'session-1', jevMs: 200, why: ['Jev unsure'],
       jev: { signals: { effortScore: 0, escalate: 0.9 } }, effort: 'low',
       engine: { model: 'claude-sonnet-5-5', effort: 'high' }, sent: { model: 'claude-opus-5-5', effort: 'low' },
     },
@@ -722,8 +757,8 @@ describe('/jcmr-stats', () => {
       [
         'jcmr stats: the last 5 decisions, 3 sessions, 10-08 to 10-09',
         "first-turn model, Jev's vs the engine's (2): up 1 · same 1 · down 0",
-        "effort, Jev's vs the engine's (3): higher 0 · same 1 · lower 2",
-        'Jev: 2 errors of 5 (40%) · answers took p50 300 ms, p95 500 ms',
+        "effort, the router's vs the engine's (3): higher 0 · same 1 · lower 2",
+        'Jev: 2 errors of 5 (40%) · unsure of the effort 1 · answers took p50 300 ms, p95 500 ms',
         'complaints: 1 of 1 later turns Jev answered (100%)',
       ].join('\n'),
     )

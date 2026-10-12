@@ -59,10 +59,11 @@ export function defaultEffort(model: string): Effort | undefined {
   return /(?:opus|haiku)-5-5/.test(model) ? 'medium' : 'high'
 }
 
-// Start from the previous effort on a continuation, else from Jev's score;
-// then a complaint raises it a level and a high-stakes task lifts it to high
-// (xhigh is for long-running work). The floor applies next and the ceiling
-// last, so the ceiling wins.
+// Start from the previous effort on a continuation, else from Jev's score,
+// unless Jev is unsure of the score (below minConfidence): then the previous
+// effort holds, and a first turn changes nothing. Then a complaint raises it
+// a level and a high-stakes task lifts it to high (xhigh is for long-running
+// work). The floor applies next and the ceiling last, so the ceiling wins.
 export function decideEffort(input: {
   signals: Signals | undefined
   previous: Effort | undefined
@@ -71,27 +72,31 @@ export function decideEffort(input: {
   continuationThreshold: number
   minEffort: Effort
   maxEffort: Effort
-}): { effort: Effort | undefined; escalated: boolean } {
-  const { signals, previous, isFirstTurn, threshold, continuationThreshold, minEffort, maxEffort } = input
+  minConfidence?: number
+}): { effort: Effort | undefined; escalated: boolean; unsure?: true } {
+  const { signals, previous, isFirstTurn, threshold, continuationThreshold, minEffort, maxEffort, minConfidence = 0 } = input
   if (!signals) return { effort: isFirstTurn || !previous ? undefined : atMost(previous, maxEffort), escalated: false }
 
   const holds = (p: number | undefined) => p !== undefined && p > threshold
   const isContinuation = !isFirstTurn && signals.continuation !== undefined && signals.continuation > continuationThreshold
   const escalated = !isFirstTurn && holds(signals.escalate)
+  const unsure = !isContinuation && signals.effortConfidence !== undefined && signals.effortConfidence < minConfidence
+  const said = unsure ? ({ unsure: true } as const) : {}
 
   let effort =
     isContinuation && previous
       ? previous
-      : signals.effortScore !== undefined
+      : !unsure && signals.effortScore !== undefined
         ? effortFromScore(signals.effortScore)
         : previous
-  if (!effort) return { effort: undefined, escalated: false }
+  // Nothing to hold or score: only a risky task sets an effort; a complaint is still told.
+  if (!effort) return { effort: holds(signals.highStakes) ? atMost(atLeast('high', minEffort), maxEffort) : undefined, escalated, ...said }
 
   // A complaint goes up from the attempt it complains about, even when Jev
   // takes it for a new task and scores the short complaint itself.
   if (escalated) effort = oneUp(previous ? atLeast(effort, previous) : effort)
   if (holds(signals.highStakes)) effort = atLeast(effort, 'high')
-  return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated }
+  return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated, ...said }
 }
 
 // Tiers weakest first.

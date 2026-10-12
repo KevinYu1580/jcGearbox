@@ -202,13 +202,13 @@ describe('on disk', () => {
   })
 
   test("the log keeps Jev's probability for each effort level and its confidence, deciding as before", { options: { default_mode: 'auto' } }, async ($, on) => {
-    const effort = { type: 'score', score: 2.2, probabilities: { '0': 0.05, '1': 0.15, '2': 0.5, '3': 0.2, '4': 0.1 }, confidence: 0.4 }
+    const effort = { type: 'score', score: 2.2, probabilities: { '0': 0.05, '1': 0.15, '2': 0.5, '3': 0.2, '4': 0.1 }, confidence: 0.9 }
     const w = world(on, { reply: { answers: { ...STRONG.answers, effort } } })
     await start($)
-    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'redesign the sync engine', 't1', { effort: 'medium' })
     const entry = [...w.db].find(([k]) => k.startsWith('log:'))?.[1] as any
     expect(entry.jev.signals.effortProbabilities).toEqual([0.05, 0.15, 0.5, 0.2, 0.1])
-    expect(entry.jev.signals.effortConfidence).toBe(0.4)
+    expect(entry.jev.signals.effortConfidence).toBe(0.9)
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
   })
 

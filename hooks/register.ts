@@ -547,6 +547,7 @@ async function plan(
     const before = r.effortPinned ? raw : r.effort // what the last attempt ran at
 
     let escalated = false
+    let unsure = false
     if (asked) {
       const error = asked.error
       const decided = decideEffort({
@@ -558,8 +559,11 @@ async function plan(
         continuationThreshold: opt.continuationThreshold,
         minEffort: opt.minEffort,
         maxEffort: opt.maxEffort,
+        minConfidence: opt.effortMinConfidence,
       })
       escalated = decided.escalated
+      // Said only where it changed what runs: an effort of the router's, on a model that takes one.
+      unsure = !!decided.unsure && !r.effortPinned && takesEffort(current(r) ?? model)
       if (first) {
         r.decided = true
         const ids: Partial<Record<Tier, string>> = {}
@@ -615,6 +619,7 @@ async function plan(
       ...(r.pin ? ['pin'] : r.userModel ? ['/model'] : []),
       ...(r.effortPinned ? ['effort pinned'] : []),
       ...(ownModel ? ['command model'] : []),
+      ...(unsure ? ['Jev unsure'] : []),
     ]
     // Jev's own pick: the first turn's model, at the effort Jev decided (the
     // sent one when it decided none).
@@ -638,6 +643,7 @@ async function plan(
     if (turn.ultracode) notes.push('ultracode')
     if (r.pin || r.userModel) notes.push('model pinned')
     if (r.effortPinned) notes.push('effort pinned')
+    if (unsure) notes.push('Jev unsure')
     const atCeiling = isEffort(before) && EFFORTS.indexOf(before) >= EFFORTS.indexOf(opt.maxEffort)
     // Only where a pin changes the request and the alias resolves.
     if (auto && firstParty && escalated && (atCeiling || !takesEffort(shown)) && !/opus|fable/.test(shown)) notes.push('try /jcmr-pin opus')
@@ -907,6 +913,7 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
   }
 
   const errors = ds.filter(d => d.error).length
+  const unsure = ds.filter(d => d.why?.includes('Jev unsure')).length
   const times = answered.flatMap(d => (d.jevMs === undefined ? [] : [d.jevMs])).sort((a, b) => a - b)
   const at = (q: number) => times[Math.max(0, Math.ceil(q * times.length) - 1)]
   const timing = times.length > 0 ? ` · answers took p50 ${at(0.5)} ms, p95 ${at(0.95)} ms` : ''
@@ -916,8 +923,8 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
   return [
     `jcmr stats: the last ${ds.length} decisions, ${new Set(ds.map(d => d.session)).size} sessions, ${day(Math.min(...ats))} to ${day(Math.max(...ats))}`,
     `first-turn model, Jev's vs the engine's (${sum(models)}): up ${models.up} · same ${models.same} · down ${models.down}`,
-    `effort, Jev's vs the engine's (${sum(efforts)}): higher ${efforts.higher} · same ${efforts.same} · lower ${efforts.lower}`,
-    `Jev: ${errors} error${errors === 1 ? '' : 's'} of ${ds.length} (${pct(errors, ds.length)})${timing}`,
+    `effort, the router's vs the engine's (${sum(efforts)}): higher ${efforts.higher} · same ${efforts.same} · lower ${efforts.lower}`,
+    `Jev: ${errors} error${errors === 1 ? '' : 's'} of ${ds.length} (${pct(errors, ds.length)})${unsure > 0 ? ` · unsure of the effort ${unsure}` : ''}${timing}`,
     later.length > 0
       ? `complaints: ${complaints} of ${later.length} later turns Jev answered (${pct(complaints, later.length)})`
       : 'complaints: no later turns Jev answered yet',
@@ -942,6 +949,7 @@ function readOptions(options: PluginOptions) {
     tierUpgradeProbability: num('tier_upgrade_probability'),
     signalThreshold: num('signal_threshold'),
     continuationThreshold: num('continuation_threshold'),
+    effortMinConfidence: num('effort_min_confidence'),
     minEffort: text('min_effort') as Effort,
     maxEffort: text('max_effort') as Effort,
     jevModel: text('jev_model') || 'jev-latest',

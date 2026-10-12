@@ -82,6 +82,14 @@
       "max": 1,
       "default": 0.6
     },
+    "effort_min_confidence": {
+      "type": "number",
+      "title": "Confidence needed to change the effort",
+      "description": "Default: 0.7. When Jev's confidence in its effort answer is below this, the effort is left as it ran: the last turn's, or the engine's own on a session's first prompt. A complaint or a high-stakes task still raises it. 0 always follows Jev.",
+      "min": 0,
+      "max": 1,
+      "default": 0.7
+    },
     "min_effort": {
       "type": "string",
       "title": "Minimum effort",
