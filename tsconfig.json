@@ -1,4 +1,6 @@
 {
+  // .claude-plugin/types is git-ignored: run /plugin-types .claude-plugin/types in Claude Code
+  // once to write it, then npx -p typescript tsc --noEmit -p .
   "extends": "./.claude-plugin/types/tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true
