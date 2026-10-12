@@ -34,7 +34,7 @@ type Decision = {
   model?: string
   effort?: Effort
   sent?: { model: string; effort: string | number | null } // what the request carried: ours in auto, the engine's own otherwise
-  pick?: string // Jev's own pick as model·effort, which the status line and the log show beside `sent`
+  pick?: string // Jev's own pick as model·effort, which the log shows beside `sent` and the status line in shadow
   why?: string[] // why it differs from Jev's pick (shadow, pin, /model, effort pinned), and ultracode
   served?: string // the model the API answered as, when it was not the one sent
   engine?: { model: string; effort: string | number | null } // the engine's own model and effort for the turn
@@ -485,7 +485,7 @@ async function plan(
     return { apply: false }
   }
 
-  const { tiers, firstParty } = await resolution($, ctx, id)
+  const { tiers } = await resolution($, ctx, id)
   const first = !joined.decided
   // Shadow sends every request as it is; after the first turn the model is
   // set, so a pinned effort, or a model that takes none, leaves Jev nothing
@@ -544,9 +544,7 @@ async function plan(
       r.rawModel = model
       ctx.baselined.add(id)
     }
-    const before = r.effortPinned ? raw : r.effort // what the last attempt ran at
 
-    let escalated = false
     let unsure = false
     if (asked) {
       const error = asked.error
@@ -561,7 +559,6 @@ async function plan(
         maxEffort: opt.maxEffort,
         minConfidence: opt.effortMinConfidence,
       })
-      escalated = decided.escalated
       // Said only where it changed what runs: an effort of the router's, on a model that takes one.
       unsure = !!decided.unsure && !r.effortPinned && takesEffort(current(r) ?? model)
       if (first) {
@@ -637,20 +634,11 @@ async function plan(
     }
     await save($, id, r)
 
-    const shown = chosen ?? model
-    const notes: string[] = []
-    if (pick !== sentLabel(sent)) notes.push(`jev ${pick}`)
-    if (turn.ultracode) notes.push('ultracode')
-    if (r.pin || r.userModel) notes.push('model pinned')
-    if (r.effortPinned) notes.push('effort pinned')
-    if (unsure) notes.push('Jev unsure')
-    const atCeiling = isEffort(before) && EFFORTS.indexOf(before) >= EFFORTS.indexOf(opt.maxEffort)
-    // Only where a pin changes the request and the alias resolves.
-    if (auto && firstParty && escalated && (atCeiling || !takesEffort(shown)) && !/opus|fable/.test(shown)) notes.push('try /jcmr-pin opus')
-    if (Object.values(tiers).some(t => t?.source === 'builtin')) notes.push('built-in model table')
-    if (asked?.error) notes.push(`Jev ${asked.error}`)
-    const head = mode === 'auto' ? 'jcmr' : `jcmr(${mode})`
-    $.ui.status(`${head} ▸ ${sentLabel(sent)}${notes.map(n => ` · ${n}`).join('')}`)
+    // Only the model and effort: in auto what was sent, in shadow Jev's pick
+    // (what was sent is the session's own). The why is in /jcmr-log; a Jev
+    // error is said, or an unjudged prompt would look judged.
+    const head = auto ? 'jcmr' : `jcmr(${mode})`
+    $.ui.status(`${head} ▸ ${auto ? sentLabel(sent) : pick}${asked?.error ? ` · Jev ${asked.error}` : ''}`)
 
     return { apply: auto, model: chosen, effort, logKey }
   })

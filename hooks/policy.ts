@@ -73,9 +73,9 @@ export function decideEffort(input: {
   minEffort: Effort
   maxEffort: Effort
   minConfidence?: number
-}): { effort: Effort | undefined; escalated: boolean; unsure?: true } {
+}): { effort: Effort | undefined; unsure?: true } {
   const { signals, previous, isFirstTurn, threshold, continuationThreshold, minEffort, maxEffort, minConfidence = 0 } = input
-  if (!signals) return { effort: isFirstTurn || !previous ? undefined : atMost(previous, maxEffort), escalated: false }
+  if (!signals) return { effort: isFirstTurn || !previous ? undefined : atMost(previous, maxEffort) }
 
   const holds = (p: number | undefined) => p !== undefined && p > threshold
   const isContinuation = !isFirstTurn && signals.continuation !== undefined && signals.continuation > continuationThreshold
@@ -89,14 +89,14 @@ export function decideEffort(input: {
       : !unsure && signals.effortScore !== undefined
         ? effortFromScore(signals.effortScore)
         : previous
-  // Nothing to hold or score: only a risky task sets an effort; a complaint is still told.
-  if (!effort) return { effort: holds(signals.highStakes) ? atMost(atLeast('high', minEffort), maxEffort) : undefined, escalated, ...said }
+  // Nothing to hold or score: only a risky task sets an effort.
+  if (!effort) return { effort: holds(signals.highStakes) ? atMost(atLeast('high', minEffort), maxEffort) : undefined, ...said }
 
   // A complaint goes up from the attempt it complains about, even when Jev
   // takes it for a new task and scores the short complaint itself.
   if (escalated) effort = oneUp(previous ? atLeast(effort, previous) : effort)
   if (holds(signals.highStakes)) effort = atLeast(effort, 'high')
-  return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated, ...said }
+  return { effort: atMost(atLeast(effort, minEffort), maxEffort), ...said }
 }
 
 // Tiers weakest first.

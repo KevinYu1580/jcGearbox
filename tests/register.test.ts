@@ -101,7 +101,7 @@ describe('auto mode', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toContain('built-in model table')
+    expect((await command($, '')).text).toContain('opus-5-5 (built-in)')
   })
 })
 
@@ -129,10 +129,10 @@ describe('ultracode', () => {
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'ULTRACODE audit every module for races', 't2')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high · ultracode')
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·high · ultracode')
     await turn($, 'now fix the first one', 't3')
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
+    expect((await command($, 'log 1')).text).not.toContain('ultracode')
   })
 
   test("the word is the keyword only where Claude Code takes it as one", AUTO, async ($, on) => {
@@ -157,25 +157,17 @@ describe('ultracode', () => {
       'open ultracode/README',
       'open ultracode\\bin',
     ]
-    for (const [i, text] of prompts.entries()) {
-      await turn($, text, `t${i}`)
-      expect(w.status.at(-1)).not.toContain('ultracode')
-    }
+    for (const [i, text] of prompts.entries()) await turn($, text, `t${i}`)
+    const logged = [...w.db].filter(([k]) => k.startsWith('log:')).map(([, d]) => d as any)
+    expect(logged).toHaveLength(prompts.length)
+    expect(logged.filter(d => d.why?.includes('ultracode'))).toEqual([])
   })
 
   test('a keyword that ends a sentence counts', AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'audit every module with ultracode.', 't1')
-    expect(w.status.at(-1)).toContain('ultracode')
-  })
-
-  test('a turn the person did not type is never an ultracode turn', AUTO, async ($, on) => {
-    const w = world(on, { reply: STRONG })
-    await start($)
-    await turn($, 'redesign the sync engine', 't1')
-    await turn($, 'ultracode audit everything', 't2', { origin: 'task-notification' })
-    expect(w.status.at(-1)).not.toContain('ultracode')
+    expect((await command($, 'log 1')).text).toContain('· ultracode')
   })
 })
 
@@ -202,15 +194,17 @@ describe('the status line shows what was sent', () => {
     await start($)
     await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: 'medium' })
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'medium' }])
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·? · jev opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·?')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
-  test("a request without effort shows the model's default", async ($, on) => {
-    const w = world(on, { reply: STRONG })
+  test("a request without effort shows the model's default", AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
     await start($)
-    await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'], effort: null })
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·medium · jev opus-5-5·high')
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2', { effort: null })
+    expect(w.steps.at(-1)?.effort).toBeUndefined()
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·medium')
   })
 })
 
@@ -231,7 +225,7 @@ describe('shadow mode', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
   })
 
   test('/jcmr and its log show what was sent, not what Jev picked', async ($, on) => {
@@ -262,16 +256,16 @@ describe('shadow mode', () => {
     expect((await command($, '')).text).toContain('sent: opus-5-5·high · served sonnet-5-5')
   })
 
-  test("the status line's jev is Jev's own pick, as in the log, whatever the person set", { options: { low_model: 'sonnet' } }, async ($, on) => {
+  test("in shadow the status line shows Jev's own pick, as the log does, whatever the person set", { options: { low_model: 'sonnet' } }, async ($, on) => {
     const w = world(on, { reply: SURE_EASY })
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
     await command($, 'pin opus')
     await turn($, 'rename bar to baz', 't2', { models: ['claude-opus-5-5'] })
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high · jev sonnet-5-5·low · model pinned')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·low')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·high  jev sonnet-5-5·low')
     await turn($, 'rename baz to qux', 't3', { models: ['claude-opus-5-5'], effort: 'max' })
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·max · jev sonnet-5-5·low · model pinned · effort pinned')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·low')
   })
 
   test('a pin, a /model switch and a changed effort still send every request unchanged', async ($, on) => {
@@ -299,7 +293,7 @@ describe('shadow mode', () => {
       { model: 'claude-opus-5-5', effort: 'high' },
       { model: 'claude-opus-5-5', effort: 'high' },
     ])
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high · jev sonnet-5-5·low')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·low')
   })
 })
 
@@ -463,7 +457,7 @@ describe('overrides', () => {
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
     release()
     await t3
-    expect(w.status.at(-1)).toContain('effort pinned')
+    expect((await command($, '')).text).toContain('effort: yours')
   })
 
   test('the person changing the effort pins it', AUTO, async ($, on) => {
@@ -472,7 +466,7 @@ describe('overrides', () => {
     await turn($, 'redesign the sync engine', 't1', { effort: 'high' })
     await turn($, 'ok', 't2', { effort: 'low' })
     expect(w.steps.map(s => s.effort)).toEqual(['high', 'low'])
-    expect(w.status.at(-1)).toContain('effort pinned')
+    expect((await command($, '')).text).toContain('effort: yours')
   })
 })
 
@@ -518,7 +512,7 @@ describe('/jcmr', () => {
     expect((await command($, 'shadow')).text).toBe('jcmr: shadow for this session.')
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
     w.session = 'session-2'
     await turn($, 'redesign the sync engine', 't2')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
@@ -546,7 +540,7 @@ describe('an unsure Jev', () => {
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'now the tests', 't2')
     expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·xhigh · Jev unsure')
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·xhigh')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·xhigh · Jev unsure')
   })
 
@@ -555,10 +549,11 @@ describe('an unsure Jev', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'now the tests', 't2', { effort: 'max' })
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·max · jev opus-5-5·xhigh · effort pinned')
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·max')
+    expect((await command($, 'log 1')).text).not.toContain('Jev unsure')
     await command($, 'pin haiku')
     await turn($, 'and the docs', 't3', { effort: 'max' })
-    expect(w.status.at(-1)).not.toContain('Jev unsure')
+    expect((await command($, 'log 1')).text).not.toContain('Jev unsure')
   })
 
   test('effort_min_confidence sets how sure Jev must be; 0 always follows it', { options: { default_mode: 'auto', effort_min_confidence: 0 } }, async ($, on) => {

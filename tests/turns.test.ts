@@ -127,7 +127,7 @@ describe('slash commands', () => {
     expect(w.steps.at(-1)?.effort).toBe('low')
     await turn($, '/review x', 't2', { origin: 'composer', startText: commandText('review', 'x'), effort: 'max' })
     expect(w.steps.at(-1)?.effort).toBe('max')
-    expect(w.status.at(-1)).not.toContain('effort pinned')
+    expect((await command($, '')).text).not.toContain('effort: yours')
     await turn($, 'ok', 't3', { effort: 'high' })
     expect(w.steps.at(-1)?.effort).toBe('low')
   })

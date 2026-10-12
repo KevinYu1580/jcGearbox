@@ -54,7 +54,7 @@ describe('model switches', () => {
     await run($, 'effort', 'high')
     await turn($, 'ok', 't2')
     expect(w.steps.map(s => s.effort)).toEqual(['low', 'high'])
-    expect(w.status.at(-1)).toContain('effort pinned')
+    expect((await command($, '')).text).toContain('effort: yours')
   })
 
   test('/model or /effort with a word that only shows something, or no model or level, pins nothing', AUTO, async ($, on) => {
@@ -66,7 +66,7 @@ describe('model switches', () => {
     for (const args of ['status', 'help', 'auto', 'unset', 'ultracode on', 'extreme']) await run($, 'effort', args)
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
-    expect(w.status.at(-1)).not.toContain('effort pinned')
+    expect((await command($, '')).text).not.toContain('effort: yours')
   })
 
   test('/model or /effort before the first turn is only the starting point', AUTO, async ($, on) => {
@@ -139,7 +139,7 @@ describe('the effort baseline', () => {
     await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5')
     await turn($, 'ok', 't2', { models: ['claude-opus-5-5'], effort: 'xhigh' })
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).not.toContain('effort pinned')
+    expect((await command($, '')).text).not.toContain('effort: yours')
   })
 
   test('restarts on a new engine model with no switch event', AUTO, async ($, on) => {
@@ -148,7 +148,7 @@ describe('the effort baseline', () => {
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'ok', 't2', { models: ['claude-opus-4-7'], effort: 'xhigh' })
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).not.toContain('effort pinned')
+    expect((await command($, '')).text).not.toContain('effort: yours')
   })
 
   test('a switch between a scheduled turn and the first user turn pins neither model nor effort', AUTO, async ($, on) => {
@@ -224,68 +224,22 @@ describe("Jev's previous model", () => {
   })
 })
 
-describe('the try /jcmr pin opus note', () => {
-  test('shows on sonnet only once a complaint finds the effort already at max', AUTO, async ($, on) => {
-    const w = world(on, { reply: xhighThenComplaints(EASY) })
-    await start($)
-    await turn($, 'fix the flaky test', 't1')
-    await turn($, 'still failing', 't2')
-    expect(w.status.at(-1)).toBe('jcmr ▸ sonnet-5-5·max')
-    await turn($, 'still failing again', 't3')
-    expect(w.status.at(-1)).toBe('jcmr ▸ sonnet-5-5·max · try /jcmr-pin opus')
-  })
-
-  test('shows on a model that takes no effort once a complaint comes', AUTO, async ($, on) => {
-    const LOW = { answers: { ...EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.9, balanced: 0.1 }, confidence: 0.8 } } }
-    const w = world(on, { reply: (body: any) => (body.questions.tier ? LOW : COMPLAINT) })
-    await start($)
-    await turn($, 'rename foo to bar', 't1', { effort: null })
-    await turn($, 'that did not work', 't2', { models: [HAIKU], effort: null })
-    expect(w.status.at(-1)).toBe('jcmr ▸ haiku-4-5-20251001·- · try /jcmr-pin opus')
-  })
-
-  test('never shows in shadow, where a pin changes no request', async ($, on) => {
+describe('a complaint', () => {
+  test('raises the effort a level, up to max', AUTO, async ($, on) => {
     const w = world(on, { reply: xhighThenComplaints(EASY) })
     await start($)
     await turn($, 'fix the flaky test', 't1')
     await turn($, 'still failing', 't2')
     await turn($, 'still failing again', 't3')
-    expect(w.status.at(-1)).not.toContain('pin opus')
+    expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'max', 'max'])
   })
 
-  test('never shows off a first-party login, where the alias does not resolve', { options: { default_mode: 'auto', balanced_model: 'claude-sonnet-5-5', strong_model: 'claude-opus-5-5' } }, async ($, on) => {
-    const w = world(on, { reply: xhighThenComplaints(EASY), thirdParty: true })
-    await start($)
-    await turn($, 'fix the flaky test', 't1')
-    await turn($, 'still failing', 't2')
-    await turn($, 'still failing again', 't3')
-    expect(w.status.at(-1)).toBe('jcmr ▸ sonnet-5-5·max')
-  })
-
-  test('never shows on opus', AUTO, async ($, on) => {
-    const w = world(on, { reply: xhighThenComplaints(STRONG) })
-    await start($)
-    await turn($, 'fix the flaky test', 't1')
-    await turn($, 'still failing', 't2')
-    await turn($, 'still failing again', 't3')
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·max')
-  })
-
-  test('with a lower max_effort, shows once a complaint finds the effort at that ceiling', { options: { default_mode: 'auto', max_effort: 'xhigh' } }, async ($, on) => {
+  test('stops at a lower max_effort', { options: { default_mode: 'auto', max_effort: 'xhigh' } }, async ($, on) => {
     const w = world(on, { reply: xhighThenComplaints(EASY) })
     await start($)
     await turn($, 'fix the flaky test', 't1')
     await turn($, 'still failing', 't2')
     expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
-    expect(w.status.at(-1)).toBe('jcmr ▸ sonnet-5-5·xhigh · try /jcmr-pin opus')
-  })
-
-  test("shows when the person's own effort is max", AUTO, async ($, on) => {
-    const w = world(on, { reply: xhighThenComplaints(EASY) })
-    await start($)
-    await turn($, 'fix the flaky test', 't1')
-    await turn($, 'still failing', 't2', { effort: 'max' })
-    expect(w.status.at(-1)).toBe('jcmr ▸ sonnet-5-5·max · effort pinned · try /jcmr-pin opus')
   })
 })
 

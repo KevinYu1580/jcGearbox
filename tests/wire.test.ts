@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { STRONG, firstStrongThenContinue, start, turn, world } from './world.ts'
+import { STRONG, command, firstStrongThenContinue, start, turn, world } from './world.ts'
 
 const TAIL = { options: { send_assistant_tail: true } }
 const NO_TAIL = { options: { send_assistant_tail: false } }
@@ -226,7 +226,7 @@ describe('on disk', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.listed).toContain('/cfg/cache/model-catalog')
-    expect(w.status.at(-1)).not.toContain('built-in model table')
+    expect((await command($, '')).text).not.toContain('built-in')
   })
 
   test('the catalog is read from $HOME/.claude otherwise', async ($, on) => {

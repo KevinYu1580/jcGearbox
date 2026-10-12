@@ -52,7 +52,7 @@ describe('session decisions', () => {
     await turn($, 'ok', 't1', { effort: 'high' })
     await turn($, 'go on', 't2', { effort: 'high' })
     expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
-    expect(w.status.at(-1)).not.toContain('effort pinned')
+    expect((await command($, '')).text).not.toContain('effort: yours')
   })
 
   test('a new session id decides its model again', AUTO, async ($, on) => {
@@ -282,7 +282,7 @@ describe('a conversation that goes on under a new id', () => {
     await turn($, 'redesign the sync engine', 't1', { answer: REPLY, effort: 'medium' })
     await goOn($, w, 'fork', forked(said('user', 'now the tests')))
     await turn($, 'now the tests', 't2', { effort: 'high' })
-    expect(w.status.at(-1)).not.toContain('effort pinned')
+    expect((await command($, '')).text).not.toContain('effort: yours')
   })
 
   test('keeps no more than 200 replies to know forks by, dropping the oldest', AUTO, async ($, on) => {
@@ -387,7 +387,7 @@ describe('status line', () => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
     await command($, 'auto')
     expect(w.status.at(-1)).toBe('jcmr')
   })
