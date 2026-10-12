@@ -1,6 +1,6 @@
 {
   "name": "jev-cc-model-router",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
   "author": {
     "name": "KevinYu1580"
@@ -29,7 +29,7 @@
     "low_model": {
       "type": "string",
       "title": "Low tier model",
-      "description": "Default: haiku (no effort setting, 200K context; a session whose first prompt picks it stays on it). Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
+      "description": "Default: haiku (a session whose first prompt picks it stays on it). Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "haiku"
     },
     "balanced_model": {
