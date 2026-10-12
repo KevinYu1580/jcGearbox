@@ -41,7 +41,7 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 | `low` | Fast, cheap, high-volume or sub-agent style tasks | `haiku` |
 | `long` | Agent sessions that run for hours, deep research | `fable` (costs the most; `off` disables it) |
 
-- The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise you stay on your model.
+- The model moves to a stronger tier's when Jev gives at least 0.5 (`tier_upgrade_probability`) that the task needs that tier or a stronger one, and to a weaker tier's only at 0.8 (`tier_min_probability`) that a weaker one will do; otherwise you stay on your model. A network error or 5xx from Jev on this prompt is retried once while a second is left.
 - The choice holds for the whole session, to keep the prompt cache. A new session or `/clear` decides again. A resumed or forked conversation doesn't: a fork takes over the choice of the session it came from when it can tell which one that was, and otherwise keeps the model it has.
 - If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session.
 - Switching to Fable this way skips the confirmation Claude Code shows before a model billed to usage credits: on a plan that bills Fable to credits, they are spent without asking. Set `long_model` to `off` if you don't want that.
@@ -52,7 +52,7 @@ The model is decided once, at the first prompt (diagram 1); after that, only the
 
 ```mermaid
 flowchart TD
-    P["First prompt of a session<br/>(on the model you picked)"] --> Q{"Does the tier Jev picks<br/>get 0.6 or more?"}
+    P["First prompt of a session<br/>(on the model you picked)"] --> Q{"Jev: 0.5 that a stronger tier<br/>is needed, or 0.8 that<br/>a weaker one will do?"}
     Q -->|"Yes"| O["The session uses<br/>that tier's model<br/>from here on"]
     Q -->|"No, or Jev<br/>errors / times out"| S["The session stays<br/>on your model"]
 ```
@@ -103,18 +103,18 @@ flowchart TD
 | Haiku 4.5 and older models | no effort | — |
 | A model id the mod doesn't know | every level | `high` |
 
-Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the session's model and the last effort; subagents are left alone. A slash command or skill that sets its own model or effort keeps it for its turn. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode` when your prompt has the keyword (pasted text counts too, and whether workflows are on isn't checked). If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why.
+Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the session's model and the last effort; subagents, `claude -p` and Agent SDK runs are left alone. A slash command or skill that sets its own model or effort keeps it for its turn. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode` when your prompt has the keyword (pasted text counts too, and whether workflows are on isn't checked). If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why. A request waits for Jev only when its answer can change it: never in shadow, nor after the first prompt once the effort is yours or the model takes none (slash commands still wait). Then only a first reply quicker than Jev waits for its answer, up to the timeout.
 
 ## Overriding it
 
 | You | The mod |
 |---|---|
 | `/jcmr-pin <model>` | Uses that model for this session |
-| `/model` or the picker, after the first prompt | Stops changing the model for this session |
-| `/effort` or the picker, after the first prompt | Stops changing the effort for this session |
+| `/model <name>` (even the model in use) or another model in the picker, after the first prompt | Stops changing the model for this session |
+| `/effort <level>` (even the level in use) or another effort in the picker, after the first prompt | Stops changing the effort for this session |
 | `/jcmr-auto` | Drops all of the above |
 
-Picking the session's original model again in `/model` isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick. Use `/jcmr-pin <model>` to go back. An `/effort` change made right after a resume or a plugin reload, before your next prompt, isn't noticed either: set it again after that prompt.
+Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcmr-pin <model>`. An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
 
 ## Commands
 
@@ -136,7 +136,7 @@ jcmr ▸ opus-5-5·high                                 auto: what was sent
 jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow: sent, then Jev's pick
 ```
 
-`jev …` is Jev's own pick, shown when it differs from what was sent: in shadow, or in auto after a pin, `/model` or an effort of your own. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr pin opus`, `built-in model table`, `Jev <error>`. The model and effort at the bottom of Claude Code are the session's own setting and don't follow the mod; the status line is what was actually sent.
+`jev …` is Jev's own pick, shown when it differs from what was sent: in shadow, or in auto after a pin, `/model` or an effort of your own. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Notes follow when they apply: `ultracode`, `model pinned`, `effort pinned`, `try /jcmr-pin opus` (in auto, after a complaint the effort can't answer), `built-in model table`, `Jev <error>`. In shadow they show once the first request has gone. The model and effort at the bottom of Claude Code are the session's own setting and don't follow the mod; the status line is what was actually sent.
 
 ## Settings
 
@@ -147,12 +147,12 @@ Set them with `/jcmr-setup`, `/plugin configure jev-cc-model-router@jev-cc-model
 | `api_key` | — | TypeSafe key; falls back to `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | `shadow`, `auto` or `off` for new sessions |
 | `low_model`, `balanced_model`, `strong_model`, `long_model` | `haiku`, `sonnet`, `opus`, `fable` | Alias (`opus[1m]` for 1M context) or full model id; `off` disables the tier |
-| `tier_min_probability` | 0.6 | Needed before the model changes |
+| `tier_upgrade_probability`, `tier_min_probability` | 0.5, 0.8 | Needed to move to a stronger, a weaker model |
 | `continuation_threshold` | 0.6 | Above this, a prompt keeps the last effort |
 | `signal_threshold` | 0.7 | Above this, "last attempt failed" and "risky" count |
 | `min_effort`, `max_effort` | `low`, `max` | Range the mod sets; your own effort isn't capped |
 | `jev_model` | `jev-latest` | Pin a version such as `jev-1.13.0`, which the thresholds were tuned on |
-| `jev_timeout_seconds` | 3 | How long the first request of a prompt waits for Jev (0.5–8) |
+| `jev_timeout_seconds` | 3 | How long a request that Jev's answer can change waits for it (0.5–8) |
 | `send_assistant_tail` | off (recommended on) | Also send the end of Claude's last reply |
 | `assistant_tail_chars` | 1000 | How much of it (100–8000; ~700 tokens per 1000) |
 
@@ -160,9 +160,9 @@ Aliases resolve only with an Anthropic login or API key; with an API key Claude 
 
 ## Privacy
 
-For each prompt you send (typed, or through `claude -p`, the SDK, Remote Control or Slack), TypeSafe receives: the prompt (up to ~6000 characters; a longer one keeps its start and end), your previous prompt (up to ~1000), from the second prompt on the session's current model and last effort (a Bedrock ARN without its account), and, with `send_assistant_tail` on, the end of Claude's last reply. The text of a prompt you didn't type is never sent, but with `send_assistant_tail` on the end of Claude's reply to it can be. Files, code and tool results go only when they are in that text, as do secrets you paste, unchanged; text Claude quotes from a web page or file can reach Jev in the reply's end and sway its judgment. TypeSafe's [privacy policy](https://typesafe.ai/legal/privacy-policy) says it does not train on this data but doesn't say how long it keeps it; servers are in the US, and zero retention is offered only on the enterprise plan. The mod asks Claude Code only whether you're logged in with an Anthropic account, to know whether aliases resolve; it never sees the credential.
+For each prompt you send (typed, or through the desktop app, Remote Control or Slack; `claude -p` and Agent SDK runs are left alone), TypeSafe receives: the prompt (up to ~6000 characters; a longer one keeps its start and end), your previous prompt (up to ~1000), from the second prompt on the session's current model and last effort (a Bedrock ARN without its account), and, with `send_assistant_tail` on, the end of Claude's last reply. The text of a prompt you didn't type is never sent, but with `send_assistant_tail` on the end of Claude's reply to it can be. Files, code and tool results go only when they are in that text. Common key and token shapes (API keys, GitHub, AWS, Slack and Google keys, JWTs, private keys) are replaced with `[redacted]` before anything is sent or kept; other secrets you paste go as they are. Text Claude quotes from a web page or file can reach Jev in the reply's end and sway its judgment. TypeSafe's [privacy policy](https://typesafe.ai/legal/privacy-policy) says it does not train on this data but doesn't say how long it keeps it; servers are in the US, and zero retention is offered only on the enterprise plan. The mod asks Claude Code only whether you're logged in with an Anthropic account, to know whether aliases resolve; it never sees the credential.
 
-Locally, in `~/.claude/plugins/store/jev-cc-model-router_*.json`, the mod keeps the first 200 characters of each prompt in its decision log (latest 200), each session's last prompt (up to ~1000 characters) and reply tail (latest 200 sessions; the session's next prompt replaces the reply tail, or deletes it with the option off), and a hash of the end of Claude's longer replies, to tell which session a fork came from (latest 200). Delete the file to clear them.
+Locally, in `~/.claude/plugins/store/jev-cc-model-router_*.json`, the mod keeps the first 200 characters of each prompt in its decision log (latest 200), each session's last prompt (up to ~1000 characters) and reply tail (latest 200 sessions; the session's next prompt replaces the reply tail, or deletes it with the option off), and a hash of the end of Claude's longer replies, to tell which session a fork came from (latest 200). Each decision also keeps the engine's own model and effort, how long Jev took, the turn's request and token counts, and how much of your rate limits was used. Delete the file to clear them.
 
 ## License
 
