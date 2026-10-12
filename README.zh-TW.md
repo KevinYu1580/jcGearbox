@@ -44,6 +44,7 @@ session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因
 - 勝出的機率要有 0.6（`tier_min_probability`）才會換 model，否則維持你選的 model。
 - 選擇會維持整個 session，避免 prompt cache 失效。新 session 或 `/clear` 會重新選；接續或 fork 的對話不會：fork 認得出來源 session 時沿用它的選擇，否則維持原本的 model。
 - API 不讓用某個 model（沒有權限、沒有提供），或 model 拒答時，這個 session 不會再要求它。
+- 這樣換成 Fable 時，不會出現 Claude Code 對「用 usage credits 計費的 model」的確認視窗：如果你的方案把 Fable 算進 credits，會直接扣。不想要就把 `long_model` 設成 `off`。
 
 ### 一個 session 裡 model 怎麼變
 
@@ -102,7 +103,7 @@ flowchart TD
 | Haiku 4.5 和更舊的 model | 不支援 effort | — |
 | mod 不認得的 model ID | 全部等級 | `high` |
 
-不是你打的 prompt（通知、排程）和子代理都不處理。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort，並標示 `ultracode`。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。
+不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理一律不動。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。
 
 ## 手動覆寫
 
@@ -113,16 +114,16 @@ flowchart TD
 | 第一個 prompt 之後用 `/effort` 或選單換 effort | 這個 session 不再改 effort |
 | `/jcmr-auto` | 清掉以上全部 |
 
-在 `/model` 選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model。要回去請用 `/jcmr-pin <model>`。
+在 `/model` 選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model。要回去請用 `/jcmr-pin <model>`。resume 或重載 plugin 之後、送出下一個 prompt 之前改的 `/effort` 也偵測不到：請在那個 prompt 之後再設一次。
 
 ## 指令
 
 | 指令 | 作用 |
 |---|---|
 | `/jcmr-setup` | 引導設定 |
-| `/jcmr-status`（或 `/jcmr`） | 模式、model、effort、上一則的 Jev 分數，以及上個請求實際送出的值 |
+| `/jcmr-status`（或 `/jcmr`） | 模式、model、effort、各 tier 對應的 model、上一則的 Jev 分數與版本，以及上個請求實際送出的值 |
 | `/jcmr-auto`、`/jcmr-shadow`、`/jcmr-off` | 這個 session 的模式（`/jcmr-auto` 會一併清掉 pin） |
-| `/jcmr-on` | `/jcmr-off` 之後重新開啟，回到 `default_mode`；pin 保留 |
+| `/jcmr-on` | `/jcmr-off` 之後重新開啟，回到 `default_mode`（它是 `off` 時改開 `auto`）；pin 保留 |
 | `/jcmr-pin <model>` | 固定用某個別名或完整 model ID |
 | `/jcmr-log [n]` | 最近 `n` 筆決策（預設 20），包含所有 session |
 
@@ -135,33 +136,33 @@ jcmr ▸ opus-5-5·high                                 auto：實際送出的
 jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，接著是 Jev 的選擇
 ```
 
-視情況加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr pin opus`、`built-in model table`、`Jev <錯誤>`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，不會跟著 mod 變；實際送出的值以狀態列為準。
+`jev …` 是 Jev 自己的選擇，和實際送出的不同時才顯示：shadow 模式，或 auto 模式下用了 pin、`/model` 或你自己設的 effort。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。視情況加註：`ultracode`、`model pinned`、`effort pinned`、`try /jcmr pin opus`、`built-in model table`、`Jev <錯誤>`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，不會跟著 mod 變；實際送出的值以狀態列為準。
 
 ## 設定
 
-用 `/jcmr-setup`、`/plugin configure jev-cc-model-router@jev-cc-model-router`，或 `claude plugin configure … --values-stdin`（值要寫成字串）修改，改完重開 Claude Code。設定存在 `~/.claude/settings.json` 的 `pluginConfigs`；`api_key` 存在 Claude Code 的安全儲存區。
+用 `/jcmr-setup`、`/plugin configure jev-cc-model-router@jev-cc-model-router`，或 `claude plugin configure … --values-stdin`（值要寫成字串）修改。在 `/config` 改的會立刻生效；其他方式改完執行 `/reload-plugins` 或開新 session。設定存在 `~/.claude/settings.json` 的 `pluginConfigs`；`api_key` 存在 Claude Code 的安全儲存區。
 
 | 設定 | 預設 | 說明 |
 |---|---|---|
 | `api_key` | — | TypeSafe key；沒填時讀 `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | 新 session 的模式：`shadow`、`auto` 或 `off` |
-| `low_model`、`balanced_model`、`strong_model`、`long_model` | `haiku`、`sonnet`、`opus`、`fable` | 別名或完整 model ID；填 `off` 停用該 tier |
+| `low_model`、`balanced_model`、`strong_model`、`long_model` | `haiku`、`sonnet`、`opus`、`fable` | 別名（`opus[1m]` 是 1M context）或完整 model ID；填 `off` 停用該 tier |
 | `tier_min_probability` | 0.6 | 換 model 需要的機率 |
 | `continuation_threshold` | 0.6 | 超過就算接續，沿用上一回合的 effort |
 | `signal_threshold` | 0.7 | 超過才算「上次失敗」和「有風險」 |
 | `min_effort`、`max_effort` | `low`、`max` | mod 設定的範圍；你自己設的 effort 不受限 |
-| `jev_model` | `jev-latest` | 填 `jev-1.13.0` 這類版本可固定 |
-| `jev_timeout_seconds` | 3 | 等 Jev 多久（0.5–8） |
+| `jev_model` | `jev-latest` | 填 `jev-1.13.0` 這類版本可固定；各門檻是在這一版上調的 |
+| `jev_timeout_seconds` | 3 | 每個 prompt 的第一個請求等 Jev 多久（0.5–8） |
 | `send_assistant_tail` | 關（建議開） | 一併送出 Claude 上一則回答的結尾 |
 | `assistant_tail_chars` | 1000 | 送多少字（100–8000；每 1000 字約 700 tokens） |
 
-別名只在用 Anthropic 帳號登入時有效。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
+別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，狀態列會顯示 `built-in model table`。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
 
 ## 隱私
 
-每個你送出的 prompt，TypeSafe 只會收到：這次的 prompt（最多約 6000 字）、上一個 prompt（最多約 1000 字）、session 目前的 model 和 effort，以及開啟 `send_assistant_tail` 時 Claude 上一則回答的結尾。檔案、程式碼和工具結果都不送，除非它們就在這些文字裡。TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不拿這些資料訓練，但沒寫明保留多久；伺服器在美國。
+每個你送出的 prompt（自己打的，或透過 `claude -p`、SDK、Remote Control、Slack 送出的），TypeSafe 會收到：這次的 prompt（最多約 6000 字，太長就保留開頭和結尾）、上一個 prompt（最多約 1000 字）、從第二個 prompt 起 session 目前的 model 和上一回合的 effort（Bedrock ARN 會去掉帳號部分），以及開啟 `send_assistant_tail` 時 Claude 上一則回答的結尾。不是你打的 prompt，內容一律不送；但開啟 `send_assistant_tail` 時，Claude 對它的回答結尾可能送出。檔案、程式碼和工具結果只有在這些文字裡時才會送出，你貼上的 secret 也會原樣送出；Claude 引用的網頁或檔案內容，可能經由回答結尾送到 Jev、影響它的判斷。TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不拿這些資料訓練，但沒寫明保留多久；伺服器在美國，只有 enterprise 方案提供 zero retention。mod 只向 Claude Code 確認你是否用 Anthropic 帳號登入，用來判斷別名能不能用，不會碰到憑證本身。
 
-本機只保留：每個 prompt 的前 200 字（決策紀錄，最近 200 筆），每個 session 的上一個 prompt 和回答結尾（最近 200 個 session），以及 Claude 較長回答結尾的雜湊，用來認出 fork 來自哪個 session（最近 200 筆）。
+本機（`~/.claude/plugins/store/jev-cc-model-router_*.json`）保留：每個 prompt 的前 200 字（決策紀錄，最近 200 筆），每個 session 的上一個 prompt（最多約 1000 字）和回答結尾（最近 200 個 session；該 session 的下一個 prompt 會換掉它，關掉選項時則是刪掉），以及 Claude 較長回答結尾的雜湊，用來認出 fork 來自哪個 session（最近 200 筆）。刪掉這個檔就會清空。
 
 ## 授權
 

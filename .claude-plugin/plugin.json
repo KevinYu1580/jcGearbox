@@ -29,25 +29,25 @@
     "low_model": {
       "type": "string",
       "title": "Low tier model",
-      "description": "Default: haiku (a session whose first prompt picks it stays on it). Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
+      "description": "Default: haiku (a session whose first prompt picks it stays on it). Type sonnet, opus, haiku or fable (opus[1m] for 1M context), or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "haiku"
     },
     "balanced_model": {
       "type": "string",
       "title": "Balanced tier model",
-      "description": "Default: sonnet. Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
+      "description": "Default: sonnet. Type sonnet, opus, haiku or fable (opus[1m] for 1M context), or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "sonnet"
     },
     "strong_model": {
       "type": "string",
       "title": "Strong tier model",
-      "description": "Default: opus. Type sonnet, opus, haiku or fable, or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
+      "description": "Default: opus. Type sonnet, opus, haiku or fable (opus[1m] for 1M context), or a full model id (needed on Bedrock, Vertex, Foundry or a gateway). Type off to disable the tier.",
       "default": "opus"
     },
     "long_model": {
       "type": "string",
       "title": "Long tier model",
-      "description": "Default: fable. For agent sessions that run for hours and deep research, as Anthropic's model selection matrix places Claude Fable 5.1. Type another alias or a full model id, or off to disable the tier.",
+      "description": "Default: fable. For agent sessions that run for hours and deep research, as Anthropic's model selection matrix places Claude Fable 5.1. Switching to it skips Claude Code's confirmation for models billed to usage credits. Type another alias or a full model id, or off to disable the tier.",
       "default": "fable"
     },
     "tier_min_probability": {
@@ -103,13 +103,13 @@
     "jev_model": {
       "type": "string",
       "title": "Jev model",
-      "description": "Default: jev-latest, which follows TypeSafe's newest model; a version such as jev-1.13.0 pins one.",
+      "description": "Default: jev-latest, which follows TypeSafe's newest model; a version such as jev-1.13.0 pins one. The thresholds were tuned on jev-1.13.0.",
       "default": "jev-latest"
     },
     "jev_timeout_seconds": {
       "type": "number",
       "title": "Jev timeout (seconds)",
-      "description": "Default: 3. How long the first request of each prompt you type waits for Jev before going ahead without its answer. 0.5 to 8; a hook may not run past 10 seconds.",
+      "description": "Default: 3. How long the first request of each prompt you type waits for Jev before going ahead without its answer. 0.5 to 8: Jev answers in well under a second, and every second waited delays the reply.",
       "min": 0.5,
       "max": 8,
       "default": 3

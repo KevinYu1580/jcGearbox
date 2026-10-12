@@ -7,7 +7,13 @@ description: Set up the jev-cc-model-router plugin step by step - API key, mode,
 
 Walk the person through these steps in order. Ask with AskUserQuestion where there is a choice, explain each choice in one or two plain sentences, and keep their current value when they want no change. Answer in the person's language.
 
-The settings live in `~/.claude/settings.json` under `pluginConfigs["jev-cc-model-router@jev-cc-model-router"].options`. Read only that object, and never print `api_key` or any environment value.
+Read the current settings with the CLI, never by reading `~/.claude/settings.json` (its `env` block can hold other secrets, and `api_key` is not kept there):
+
+```bash
+claude plugin configure jev-cc-model-router@jev-cc-model-router --json
+```
+
+`inputs` holds each setting's current value, `configured` lists the ones that are set, and a sensitive setting such as `api_key` never shows its value. Never print `api_key` or any environment value.
 
 Write a setting by piping a JSON object of strings to the CLI (numbers and booleans as strings too):
 
@@ -21,16 +27,16 @@ Run `claude plugin list` and find `jev-cc-model-router@jev-cc-model-router`. If 
 
 ## 2. A TypeSafe API key
 
-Check whether a key is set without showing it: the `TYPESAFE_API_KEY` variable (`[ -n "$TYPESAFE_API_KEY" ]`) or a key under the plugin's options. If there is none:
+A key is set when `api_key` is in `configured`, or when `[ -n "$TYPESAFE_API_KEY" ]` is true; check without showing it. If the configure command fails, ask the person rather than assume there is no key. If there is none:
 
 - Send them to https://console.typesafe.ai to create one.
-- Do not take the key in chat and do not type it anywhere yourself. The person sets it with `/plugin configure jev-cc-model-router@jev-cc-model-router` (stored in secure storage) or adds `TYPESAFE_API_KEY` to the `env` block of `~/.claude/settings.json`.
+- Do not take the key in chat and do not type it anywhere yourself. The person sets it with `/plugin configure jev-cc-model-router@jev-cc-model-router`, which keeps it in secure storage. Adding `TYPESAFE_API_KEY` to the `env` block of `~/.claude/settings.json` also works, but keeps it there in plain text and passes it to every command and MCP server Claude Code starts.
 
 ## 3. Mode (`default_mode`)
 
 - `shadow` (default): judges every prompt and shows the pick in the status line, but sends requests unchanged. Good for the first days.
 - `auto`: changes the model and effort for real.
-- `off`: does nothing until `/jcmr-on`.
+- `off`: does nothing until `/jcmr-on`, which then turns `auto` on for that session.
 
 ## 4. Send the end of Claude's reply (`send_assistant_tail`)
 
@@ -38,10 +44,10 @@ Recommend turning it on. Jev decides whether a prompt like "here are the results
 
 ## 5. Optional: the models
 
-Mention the defaults in one line each and change them only if asked: `low_model` haiku, `balanced_model` sonnet, `strong_model` opus, `long_model` fable (the most expensive; `off` turns it off). On Bedrock, Vertex, Foundry or a gateway the aliases do not resolve, so each tier needs a full model id.
+Mention the defaults in one line each and change them only if asked: `low_model` haiku, `balanced_model` sonnet, `strong_model` opus, `long_model` fable (the most expensive; `off` turns it off). Switching to Fable skips Claude Code's confirmation for models billed to usage credits, so on a plan that bills Fable to credits they are spent without asking. An alias may end in `[1m]` for the 1M context. On Bedrock, Vertex, Foundry or a gateway the aliases do not resolve, so each tier needs a full model id.
 
 ## 6. Check
 
-Tell the person to restart Claude Code (settings apply at start), send any prompt, and look for `jcmr ▸ …` or `jcmr(shadow) ▸ …` in the status line. `jcmr: no API key` or `Jev HTTP 401` means the key is missing or wrong. `/jcmr-status` shows the full state and `/jcmr-log` the decisions.
+Tell the person to run `/reload-plugins` (or start a new session) so the settings apply, send any prompt, and look for `jcmr ▸ …` or `jcmr(shadow) ▸ …` in the status line. `jcmr: no API key` or `Jev HTTP 401` means the key is missing or wrong. `/jcmr-status` shows the full state and `/jcmr-log` the decisions.
 
 End with a short list of what was set.
