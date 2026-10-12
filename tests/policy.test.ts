@@ -41,6 +41,18 @@ describe('decideEffort', () => {
     expect(r).toEqual({ effort: 'xhigh', escalated: true })
   })
 
+  test('a complaint taken for a new task still goes up from the previous effort', () => {
+    const complaint = { effortScore: 0.2, continuation: 0.1, escalate: 0.9 }
+    expect(decideEffort({ ...base, isFirstTurn: false, previous: 'high', signals: complaint })).toEqual({
+      effort: 'xhigh',
+      escalated: true,
+    })
+    expect(decideEffort({ ...base, isFirstTurn: false, previous: 'max', signals: complaint }).effort).toBe('max')
+    expect(decideEffort({ ...base, isFirstTurn: false, previous: 'low', signals: { ...complaint, effortScore: 2.2 } }).effort).toBe(
+      'xhigh',
+    )
+  })
+
   test('a complaint at max stays at max', () => {
     const r = decideEffort({
       ...base,
@@ -172,6 +184,16 @@ describe('effortFor', () => {
     expect(effortFor('claude-opus-5-5', undefined)).toBeUndefined()
   })
 
+  test('Haiku 5.5 takes every level; Haiku 4.5 and older take none', () => {
+    for (const model of ['claude-haiku-5-5', 'claude-haiku-5-5[1m]', 'us.anthropic.claude-haiku-5-5']) {
+      expect(effortFor(model, 'low')).toBe('low')
+      expect(effortFor(model, 'max')).toBe('max')
+    }
+    for (const model of ['claude-haiku-4-5-20251001', 'anthropic.claude-haiku-4-5-20251001-v1:0', 'claude-3-5-haiku-20241022']) {
+      expect(effortFor(model, 'high')).toBeUndefined()
+    }
+  })
+
   test('models older than Opus 4.5 and Sonnet 4.6 take no effort, on every platform', () => {
     for (const model of [
       'claude-sonnet-4-5-20250929',
@@ -197,9 +219,10 @@ describe('effortFor', () => {
 })
 
 describe('defaultEffort', () => {
-  test('medium on Opus 5.5, high on the rest, none where effort is not taken', () => {
+  test('medium on Opus 5.5 and Haiku 5.5, high on the rest, none where effort is not taken', () => {
     expect(defaultEffort('claude-opus-5-5')).toBe('medium')
     expect(defaultEffort('claude-opus-5-5[1m]')).toBe('medium')
+    expect(defaultEffort('claude-haiku-5-5')).toBe('medium')
     expect(defaultEffort('claude-sonnet-5-5')).toBe('high')
     expect(defaultEffort('claude-fable-5-1')).toBe('high')
     expect(defaultEffort('claude-opus-5')).toBe('high')

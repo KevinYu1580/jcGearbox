@@ -35,11 +35,11 @@ function oneUp(effort: Effort): Effort {
   return EFFORTS[Math.min(EFFORTS.length - 1, EFFORTS.indexOf(effort) + 1)] ?? effort
 }
 
-// Anthropic's effort table (build-with-claude/effort): Haiku and the models
-// before Opus 4.5 and Sonnet 4.6 take no effort; Opus 4.5 takes up to high;
-// Opus 4.6, Sonnet 4.6 and Mythos Preview take max but not xhigh. Any other
-// model, including ids we do not know yet, takes every level.
-const NO_EFFORT = /haiku|claude-3|(?:sonnet|opus)-4(?:-[01])?(?:-\d{8}|-v\d|$|[@:[])|sonnet-4-5/
+// Anthropic's effort table (build-with-claude/effort): Haiku 4.5 and older and
+// the models before Opus 4.5 and Sonnet 4.6 take no effort; Opus 4.5 takes up
+// to high; Opus 4.6, Sonnet 4.6 and Mythos Preview take max but not xhigh. Any
+// other model, Haiku 5.5 and ids we do not know yet included, takes every level.
+const NO_EFFORT = /haiku-[34]|claude-3|(?:sonnet|opus)-4(?:-[01])?(?:-\d{8}|-v\d|$|[@:[])|sonnet-4-5/
 const HIGH_AT_MOST = /opus-4-5/
 const NO_XHIGH = /opus-4-6|sonnet-4-6|mythos-preview/
 
@@ -50,11 +50,11 @@ export function effortFor(model: string, effort: Effort | undefined): Effort | u
   return effort
 }
 
-// The level a request without effort runs at: medium on Opus 5.5, high on
-// every other model that takes effort.
+// The level a request without effort runs at: medium on Opus 5.5 and Haiku
+// 5.5, high on every other model that takes effort.
 export function defaultEffort(model: string): Effort | undefined {
   if (NO_EFFORT.test(model)) return undefined
-  return /opus-5-5/.test(model) ? 'medium' : 'high'
+  return /(?:opus|haiku)-5-5/.test(model) ? 'medium' : 'high'
 }
 
 // Start from the previous effort on a continuation, else from Jev's score;
@@ -85,7 +85,9 @@ export function decideEffort(input: {
         : previous
   if (!effort) return { effort: undefined, escalated: false }
 
-  if (escalated) effort = oneUp(effort)
+  // A complaint goes up from the attempt it complains about, even when Jev
+  // takes it for a new task and scores the short complaint itself.
+  if (escalated) effort = oneUp(previous ? atLeast(effort, previous) : effort)
   if (holds(signals.highStakes)) effort = atLeast(effort, 'high')
   return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated }
 }
