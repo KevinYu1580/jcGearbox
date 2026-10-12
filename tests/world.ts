@@ -132,6 +132,13 @@ export function world(on: On, o: WorldOptions = {}): World {
     return { value: { startedAt: 0, context: {} as any, rateLimits: o.rateLimits ?? [] } }
   })
   on('command.run', () => ({ text: '' })) // a built-in command, run by the engine
+  const agents: { id: string; description: string; type: string; status: 'running'; parentId?: string }[] = []
+  on('agent.spawn', ($, e) => {
+    const id = `agent-${agents.length + 1}`
+    agents.push({ id, description: e.description, type: e.subagentType, status: 'running', ...(e.parentAgentId ? { parentId: e.parentAgentId } : {}) })
+    return { model: e.parentModel, agentId: id }
+  })
+  on('agent.list', () => ({ value: agents }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('classic.SessionStart', () => ({}))
   // As in the engine, the turn starts before the submit settles.
@@ -232,6 +239,22 @@ export const command = ($: any, args: string) =>
 // One of the /jcmr-<action> commands.
 export const run = ($: any, name: string, args = '') =>
   $.command.run({ command: name, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+
+// The Agent tool starting a subagent: a fork of the main conversation by default.
+export const spawnAgent = async ($: any, o: { fork?: boolean; parentAgentId?: string } = {}) =>
+  (
+    await $.agent.spawn({
+      tool_use_id: 'toolu_1',
+      prompt: 'look into it',
+      description: 'look into it',
+      subagentType: o.fork === false ? 'general-purpose' : 'fork',
+      provider: { plugin: 'engine', tier: 'core' },
+      parentModel: 'claude-sonnet-5-5',
+      background: false,
+      fork: o.fork !== false,
+      ...(o.parentAgentId ? { parentAgentId: o.parentAgentId } : {}),
+    })
+  ).agentId as string
 
 export const switchModel = ($: any, from: string, to: string, source = 'picker') =>
   $.classic.PostModelSwitch({

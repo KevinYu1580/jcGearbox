@@ -135,6 +135,12 @@
       "min": 100,
       "max": 8000,
       "default": 1000
+    },
+    "fork_follows_route": {
+      "type": "boolean",
+      "title": "Route forked subagents too",
+      "description": "Default: off. In auto, a subagent forked from the main conversation (one that shares its context) runs on the model the session is routed to rather than the menu model, so it reads the conversation's prompt cache. Its effort is left as it is.",
+      "default": false
     }
   }
 }

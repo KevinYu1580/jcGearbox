@@ -17,7 +17,7 @@ const FORK_REPLY_CHARS = 200 // a reply at least this long names the one session
 const USER_ORIGINS = new Set(['composer', 'sdk', 'bridge', 'slack-ping'])
 // claude -p and the Agent SDKs: scripts, whose prompts are no task to judge.
 const SDK_ENTRYPOINTS = ['sdk-cli', 'sdk-ts', 'sdk-py']
-const USAGE = 'Usage: /jcmr [status | auto | shadow | off | on | pin <model> | log [n]], or /jcmr-<that>'
+const USAGE = 'Usage: /jcmr [status | auto | shadow | off | on | pin <model> | log [n] | stats], or /jcmr-<that>'
 // The engine puts this before a Slack message's text by the time its turn starts.
 const NON_USER_FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
 
@@ -109,6 +109,7 @@ type Ctx = {
   joined: Set<string> // sessions that resume or fork a conversation already under way
   baselined: Set<string> // sessions whose engine effort this process has seen
   engineModels: Map<string, string> // each session's own model, as its last plain turn or switch left it
+  forks: Map<string, string | null> // each subagent seen: the model a fork of the main conversation started on, else null
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
 
@@ -122,6 +123,7 @@ export const register: Register = (on, options) => {
     joined: new Set(),
     baselined: new Set(),
     engineModels: new Map(),
+    forks: new Map(),
     queue: Promise.resolve(),
   }
   const { opt, submitted, turns } = ctx
@@ -136,8 +138,8 @@ export const register: Register = (on, options) => {
         : undefined
     await $.command.register({
       name: 'jcmr',
-      description: 'Jev model router: status, mode, pin, log',
-      argumentHint: '[status | auto | shadow | off | on | pin <model> | log [n]]',
+      description: 'Jev model router: status, mode, pin, log, stats',
+      argumentHint: '[status | auto | shadow | off | on | pin <model> | log [n] | stats]',
     })
     // One command per action, so the typeahead lists them all; /jcmr <action> still works.
     const d = 'Jev model router:'
@@ -148,6 +150,7 @@ export const register: Register = (on, options) => {
     await $.command.register({ name: 'jcmr-on', description: `${d} turn it back on for this session (default mode, or auto)` })
     await $.command.register({ name: 'jcmr-pin', description: `${d} use one model for this session`, argumentHint: '<alias or model id>' })
     await $.command.register({ name: 'jcmr-log', description: `${d} recent decisions, across sessions`, argumentHint: '[n]' })
+    await $.command.register({ name: 'jcmr-stats', description: `${d} how the logged decisions compare with the engine's own` })
     await prune($)
     await showMode($, ctx)
     return next(e)
@@ -190,7 +193,21 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId || ctx.disabled) return yield* next(e)
+    if (e.agentId) {
+      // A fork of the main conversation shares it, so on the session's routed
+      // model it reads the conversation's prompt cache (fork_follows_route).
+      // Any other subagent, and a fork's step on the engine's fallback, is left alone.
+      if (!opt.forkFollowsRoute || ctx.disabled) return yield* next(e)
+      if (!ctx.forks.has(e.agentId)) {
+        const agent = (await $.agent.list()).find(a => a.id === e.agentId)
+        ctx.forks.set(e.agentId, agent?.type === 'fork' && !agent.parentId ? e.model : null)
+      }
+      if (ctx.forks.get(e.agentId) !== e.model || !(await apiKey($, opt))) return yield* next(e)
+      const [, r] = await serial(ctx, () => record($))
+      const model = (r.mode ?? opt.defaultMode) === 'auto' ? current(r) : undefined
+      return yield* next(model && movesTo(model, e.model) ? { ...e, model } : e)
+    }
+    if (ctx.disabled) return yield* next(e)
     let turn = turns.get(e.turnId)
     if (!turn) {
       turn = { isUser: false, text: '' }
@@ -339,6 +356,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'jcmr-on' }, $ => jcmr($, ctx, 'on', undefined))
   on('command.run', { command: 'jcmr-pin' }, ($, e) => jcmr($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
   on('command.run', { command: 'jcmr-log' }, ($, e) => jcmr($, ctx, 'log', e.args.trim().split(/\s+/)[0] || undefined))
+  on('command.run', { command: 'jcmr-stats' }, $ => jcmr($, ctx, 'stats', undefined))
 }
 
 async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | undefined) {
@@ -347,6 +365,7 @@ async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | und
     const n = Number.parseInt(arg ?? '', 10)
     return { text: await logText($, n > 0 ? n : 20) }
   }
+  if (sub === 'stats') return { text: await statsText($, opt) }
   const [id, r] = await joinedRecord($, ctx)
   if (sub === '' || sub === 'status') {
     const tiers = ctx.disabled ? undefined : (await resolution($, ctx, id)).tiers
@@ -627,14 +646,17 @@ async function plan(
   })
 }
 
-// The tiers the engine's model is: those naming it, else the one its family
-// stands for in Anthropic's matrix; none for an id that names no family.
+// The tier a model's family stands for in Anthropic's matrix; none for an id
+// that names no family.
+const FAMILY_TIERS = [['haiku', 'low'], ['sonnet', 'balanced'], ['opus', 'strong'], ['fable', 'long'], ['mythos', 'long']] as const
+const familyTier = (model: string | undefined): Tier | undefined => FAMILY_TIERS.find(([name]) => model?.includes(name))?.[1]
+
+// The tiers the engine's model is: those naming it, else its family's.
 function engineTiers(model: string, tiers: Tiers): Tier[] {
   const id = model.replace(/\[\w+\]$/, '')
   const named = TIERS.filter(t => tiers[t]?.id.replace(/\[\w+\]$/, '') === id)
   if (named.length > 0) return named
-  const family = [['haiku', 'low'], ['sonnet', 'balanced'], ['opus', 'strong'], ['fable', 'long'], ['mythos', 'long']] as const
-  const tier = family.find(([name]) => id.includes(name))?.[1]
+  const tier = familyTier(id)
   return tier ? [tier] : []
 }
 
@@ -841,6 +863,63 @@ async function logText($: EngineInterface, n: number): Promise<string> {
   return lines.length > 0 ? ['```', ...lines, '```'].join('\n') : 'jcmr: no decisions logged yet.'
 }
 
+// How the logged decisions Jev answered compare with what the engine would
+// have run: in shadow the sent request is the engine's own, in auto the log
+// keeps it.
+async function statsText($: EngineInterface, opt: Options): Promise<string> {
+  const ds: (Decision & { session?: string })[] = []
+  for (const key of (await $.store.keys()).filter(k => k.startsWith('log:'))) {
+    const d = (await $.store.get(key)) as (Decision & { session?: string }) | undefined
+    if (d) ds.push(d)
+  }
+  if (ds.length === 0) return 'jcmr: no decisions logged yet.'
+  const engine = (d: Decision) => d.engine ?? (d.mode === 'auto' ? undefined : d.sent)
+  const pct = (n: number, of: number) => `${Math.round((n / of) * 100)}%`
+  const day = (at: number) => {
+    const t = new Date(at)
+    return `${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+  }
+  const ats = ds.map(d => d.at)
+
+  // A first turn moved up or down the tiers, or kept the engine's model.
+  const rank = (model: string | undefined) => {
+    const tier = familyTier(model)
+    return tier ? ['low', 'balanced', 'strong', 'long'].indexOf(tier) : undefined
+  }
+  const models = { up: 0, same: 0, down: 0 }
+  const answered = ds.filter(d => d.jev)
+  for (const d of answered.filter(d => d.first)) {
+    const from = rank(engine(d)?.model)
+    const to = rank(d.model ?? engine(d)?.model)
+    if (from === undefined || to === undefined) continue
+    models[to > from ? 'up' : to < from ? 'down' : 'same']++
+  }
+  const efforts = { higher: 0, same: 0, lower: 0 }
+  for (const d of answered) {
+    const from = engine(d)?.effort
+    if (!isEffort(d.effort) || !isEffort(from)) continue
+    const diff = EFFORTS.indexOf(d.effort) - EFFORTS.indexOf(from)
+    efforts[diff > 0 ? 'higher' : diff < 0 ? 'lower' : 'same']++
+  }
+
+  const errors = ds.filter(d => d.error).length
+  const times = answered.flatMap(d => (d.jevMs === undefined ? [] : [d.jevMs])).sort((a, b) => a - b)
+  const at = (q: number) => times[Math.max(0, Math.ceil(q * times.length) - 1)]
+  const timing = times.length > 0 ? ` · answers took p50 ${at(0.5)} ms, p95 ${at(0.95)} ms` : ''
+  const later = answered.filter(d => !d.first)
+  const complaints = later.filter(d => (d.jev?.signals.escalate ?? 0) > opt.signalThreshold).length
+  const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0)
+  return [
+    `jcmr stats: the last ${ds.length} decisions, ${new Set(ds.map(d => d.session)).size} sessions, ${day(Math.min(...ats))} to ${day(Math.max(...ats))}`,
+    `first-turn model, Jev's vs the engine's (${sum(models)}): up ${models.up} · same ${models.same} · down ${models.down}`,
+    `effort, Jev's vs the engine's (${sum(efforts)}): higher ${efforts.higher} · same ${efforts.same} · lower ${efforts.lower}`,
+    `Jev: ${errors} error${errors === 1 ? '' : 's'} of ${ds.length} (${pct(errors, ds.length)})${timing}`,
+    later.length > 0
+      ? `complaints: ${complaints} of ${later.length} later turns Jev answered (${pct(complaints, later.length)})`
+      : 'complaints: no later turns Jev answered yet',
+  ].join('\n')
+}
+
 type Options = ReturnType<typeof readOptions>
 
 function readOptions(options: PluginOptions) {
@@ -864,6 +943,7 @@ function readOptions(options: PluginOptions) {
     jevModel: text('jev_model') || 'jev-latest',
     jevTimeoutMs: Math.round(num('jev_timeout_seconds') * 1000),
     sendAssistantTail: options.send_assistant_tail === true,
+    forkFollowsRoute: options.fork_follows_route === true,
     tailChars: Math.round(num('assistant_tail_chars')),
   }
 }

@@ -447,7 +447,7 @@ describe('the /jcmr-<action> commands', () => {
   test('are registered next to /jcmr', async ($, on) => {
     const w = world(on)
     await start($)
-    expect(w.registered).toEqual(['jcmr', 'jcmr-status', 'jcmr-auto', 'jcmr-shadow', 'jcmr-off', 'jcmr-on', 'jcmr-pin', 'jcmr-log'])
+    expect(w.registered).toEqual(['jcmr', 'jcmr-status', 'jcmr-auto', 'jcmr-shadow', 'jcmr-off', 'jcmr-on', 'jcmr-pin', 'jcmr-log', 'jcmr-stats'])
   })
 
   test('do what /jcmr <action> does', AUTO, async ($, on) => {

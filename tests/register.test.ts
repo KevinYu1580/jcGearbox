@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, EASY, STRONG, SURE_EASY, command, commandText, drain, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
+import { AUTO, EASY, STRONG, SURE_EASY, command, commandText, drain, firstStrongThenContinue, run, spawnAgent, start, switchModel, turn, world } from './world.ts'
 
 describe('auto mode', () => {
   test('a hard first prompt moves every step of the session to the strong model', AUTO, async ($, on) => {
@@ -585,5 +585,143 @@ describe('settings', () => {
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+})
+
+describe('fork_follows_route', () => {
+  const FOLLOW = { options: { default_mode: 'auto', fork_follows_route: true } }
+  const forkStep = (agentId: string, model = 'claude-sonnet-5-5') =>
+    ({ turnId: 'a1', index: 0, model, messageCount: 40, effort: 'medium' as const, agentId })
+
+  test('a fork of the main conversation runs on the model the session is routed to, its effort left alone', FOLLOW, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const fork = await spawnAgent($)
+    await drain($.turn.step(forkStep(fork)))
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'medium' })
+  })
+
+  test("a fork's step on the engine's fallback model is left alone, as on the main loop", FOLLOW, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const fork = await spawnAgent($)
+    await drain($.turn.step(forkStep(fork)))
+    await drain($.turn.step({ ...forkStep(fork, 'claude-haiku-4-5-20251001'), index: 1 }))
+    expect(w.steps.slice(1).map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-haiku-4-5-20251001'])
+  })
+
+  test('without a key a fork is left alone, as the main loop is', FOLLOW, async ($, on) => {
+    const w = world(on, { reply: STRONG, noKey: true })
+    await start($)
+    await command($, 'pin opus')
+    await turn($, 'redesign the sync engine', 't1')
+    await drain($.turn.step(forkStep(await spawnAgent($))))
+    expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
+  })
+
+  test("a fork reads the session's record whole, not in the middle of a save", FOLLOW, async ($, on) => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    let holding = false
+    const w = world(on, { reply: STRONG, storeHolds: key => (holding && key.startsWith('session:') ? held : undefined) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const fork = await spawnAgent($)
+    holding = true
+    const pinning = command($, 'pin opus')
+    await w.clock.settle()
+    const step = drain($.turn.step(forkStep(fork)))
+    await w.clock.settle()
+    holding = false
+    release()
+    await Promise.all([pinning, step])
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test('other subagents, and a fork of a subagent, are left alone', FOLLOW, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const explorer = await spawnAgent($, { fork: false })
+    await drain($.turn.step(forkStep(explorer)))
+    const nested = await spawnAgent($, { parentAgentId: explorer })
+    await drain($.turn.step(forkStep(nested)))
+    expect(w.steps.slice(1)).toEqual([
+      { model: 'claude-sonnet-5-5', effort: 'medium' },
+      { model: 'claude-sonnet-5-5', effort: 'medium' },
+    ])
+  })
+
+  test('off by default, a fork is left alone', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await drain($.turn.step(forkStep(await spawnAgent($))))
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
+  test('in shadow or once the person picked the model, a fork is left alone', FOLLOW, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await command($, 'shadow')
+    await drain($.turn.step(forkStep(await spawnAgent($))))
+    await command($, 'auto')
+    await switchModel($, 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'command')
+    await drain($.turn.step(forkStep(await spawnAgent($), 'claude-haiku-4-5-20251001')))
+    expect(w.steps.slice(1).map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-haiku-4-5-20251001'])
+  })
+})
+
+describe('/jcmr-stats', () => {
+  const at = (day: number) => Date.UTC(2026, 9, day, 12)
+  const LOG = {
+    'log:1:session-1:0': {
+      at: at(8), mode: 'auto', first: true, prompt: 'a', promptLength: 1, session: 'session-1', jevMs: 300,
+      jev: { signals: { effortScore: 2 } }, model: 'claude-opus-5-5', effort: 'high',
+      engine: { model: 'claude-sonnet-5-5', effort: 'high' }, sent: { model: 'claude-opus-5-5', effort: 'high' },
+    },
+    'log:2:session-2:1': {
+      at: at(8), mode: 'shadow', first: true, prompt: 'b', promptLength: 1, session: 'session-2', jevMs: 500,
+      jev: { signals: { effortScore: 1 } }, effort: 'medium', sent: { model: 'claude-opus-5-5', effort: 'xhigh' },
+    },
+    'log:3:session-1:2': {
+      at: at(9), mode: 'auto', first: false, prompt: 'c', promptLength: 1, session: 'session-1', jevMs: 200,
+      jev: { signals: { effortScore: 0, escalate: 0.9 } }, effort: 'low',
+      engine: { model: 'claude-sonnet-5-5', effort: 'high' }, sent: { model: 'claude-opus-5-5', effort: 'low' },
+    },
+    'log:4:session-1:3': {
+      at: at(9), mode: 'auto', first: false, prompt: 'd', promptLength: 1, session: 'session-1', jev: null, error: 'timeout', jevMs: 3000,
+      effort: 'low', engine: { model: 'claude-sonnet-5-5', effort: 'high' }, sent: { model: 'claude-opus-5-5', effort: 'low' },
+    },
+    'log:5:session-3:4': {
+      at: at(9), mode: 'auto', first: true, prompt: 'e', promptLength: 1, session: 'session-3', jev: null, error: 'HTTP 503', jevMs: 100,
+      engine: { model: 'claude-sonnet-5-5', effort: 'high' }, sent: { model: 'claude-sonnet-5-5', effort: 'high' },
+    },
+  }
+
+  test('counts the logged decisions against the engine\'s own model and effort', async ($, on) => {
+    world(on, { store: LOG })
+    await start($)
+    expect((await run($, 'jcmr-stats')).text).toBe(
+      [
+        'jcmr stats: the last 5 decisions, 3 sessions, 10-08 to 10-09',
+        "first-turn model, Jev's vs the engine's (2): up 1 · same 1 · down 0",
+        "effort, Jev's vs the engine's (3): higher 0 · same 1 · lower 2",
+        'Jev: 2 errors of 5 (40%) · answers took p50 300 ms, p95 500 ms',
+        'complaints: 1 of 1 later turns Jev answered (100%)',
+      ].join('\n'),
+    )
+    expect((await command($, 'stats')).text).toBe((await run($, 'jcmr-stats')).text)
+  })
+
+  test('says so when nothing is logged yet', async ($, on) => {
+    world(on)
+    await start($)
+    expect((await run($, 'jcmr-stats')).text).toBe('jcmr: no decisions logged yet.')
   })
 })
