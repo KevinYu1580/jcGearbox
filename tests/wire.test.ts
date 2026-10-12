@@ -31,6 +31,15 @@ describe('the Jev request', () => {
     expect(w.fetches[0]?.body.model).toBe('jev-1.13.0')
   })
 
+  test("a Bedrock ARN's account and region are not sent", { options: { default_mode: 'auto' } }, async ($, on) => {
+    const ARN = 'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123'
+    const w = world(on, { reply: firstStrongThenContinue, thirdParty: true })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: [ARN] })
+    await turn($, 'ok', 't2', { models: [ARN] })
+    expect(w.asked[1].state.previous.model).toBe('abc123')
+  })
+
   test('a non-user turn sends nothing', async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
@@ -60,6 +69,25 @@ describe('send_assistant_tail', () => {
     expect((w.db.get('session:session-1') as any).replyTail).toBe('b'.repeat(300))
     await turn($, 'yes', 't2')
     expect(w.asked[1].state.previous_reply_tail).toBe('b'.repeat(300))
+  })
+
+  test("a subagent's report is not taken for Claude's reply", TAIL, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: 'Shall I apply the plan?' })
+    await $.turn.complete({ answer: 'Report: 12 files', durationMs: 5, isAborted: false, turnId: 'a1', reason: 'answer', agentId: 'agent-1' })
+    await turn($, 'yes', 't2')
+    expect(w.asked[1].state.previous_reply_tail).toBe('Shall I apply the plan?')
+  })
+
+  test('a turn with no reply to show leaves no older reply beside its prompt', TAIL, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: 'Shall I apply the plan?' })
+    await turn($, 'yes', 't2', { answer: '', reason: 'aborted' })
+    await turn($, 'that is not what I asked', 't3')
+    expect(w.asked[2].state.previous_prompt).toBe('yes')
+    expect(w.asked[2].state.previous_reply_tail).toBeUndefined()
   })
 
   test("off by default: Claude's reply does not reach the next request", async ($, on) => {
@@ -135,5 +163,19 @@ describe('on disk', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.listed).toContain('/home/u/.claude/cache/model-catalog')
+  })
+
+  test('without HOME, as on Windows, the catalog is read from USERPROFILE', async ($, on) => {
+    const w = world(on, { reply: STRONG, env: { HOME: undefined, USERPROFILE: '/users/u' } })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.listed).toEqual(['/users/u/.claude/cache/model-catalog'])
+  })
+
+  test('with no home directory at all, no catalog is read', async ($, on) => {
+    const w = world(on, { reply: STRONG, env: { HOME: undefined } })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.listed).toEqual([])
   })
 })

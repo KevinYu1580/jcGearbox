@@ -51,8 +51,8 @@ export function catalogModel(catalog: unknown, family: Family, version: string):
   if (!Array.isArray(models)) return undefined
   for (const m of models) {
     if (typeof m !== 'object' || m === null) continue
-    const { id, short_name, section, min_claude_code_version } = m as Record<string, unknown>
-    if (typeof id !== 'string' || section !== 'main') continue
+    const { id, short_name, section, min_claude_code_version, disabled } = m as Record<string, unknown>
+    if (typeof id !== 'string' || section !== 'main' || disabled === true) continue
     if (typeof short_name !== 'string' || short_name.toLowerCase() !== family) continue
     if (typeof min_claude_code_version === 'string' && !versionAtLeast(version, min_claude_code_version)) continue
     return id
@@ -63,15 +63,17 @@ export function catalogModel(catalog: unknown, family: Family, version: string):
 // An alias resolves only on a first-party login, whose ids the catalog and
 // the table hold; anything else is a full id, used as written. "off" (or an
 // empty value) disables the tier: the config menu cannot store an empty one.
+// An alias may end in [1m], as Claude Code's do, and its id keeps it.
 export function resolveModel(
   value: string | undefined,
   ctx: { firstParty: boolean; catalog?: unknown; version: string },
 ): Resolved | undefined {
   const name = value?.trim()
   if (!name || name.toLowerCase() === 'off') return undefined
-  const family = FAMILIES.find(f => f === name.toLowerCase())
+  const suffix = /\[1m\]$/i.test(name) ? '[1m]' : ''
+  const family = FAMILIES.find(f => f === name.slice(0, name.length - suffix.length).toLowerCase())
   if (!family) return { id: name, source: 'config' }
   if (!ctx.firstParty) return undefined
   const fromCatalog = catalogModel(ctx.catalog, family, ctx.version)
-  return fromCatalog ? { id: fromCatalog, source: 'catalog' } : { id: BUILTIN[family], source: 'builtin' }
+  return fromCatalog ? { id: fromCatalog + suffix, source: 'catalog' } : { id: BUILTIN[family] + suffix, source: 'builtin' }
 }

@@ -6,7 +6,6 @@ import type { Signals, Tier } from './policy.ts'
 export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 
 const PROMPT_CHARS = 6000
-const CONTEXT_CHARS = 1000
 
 const TIER_CRITERIA: Record<Tier, string> = {
   low: 'Lowest latency and price: real-time or high-volume work, cost-sensitive tasks and sub-agent style tasks, such as a lookup, an explanation, a rename, formatting, running a command or a one-line edit',
@@ -77,6 +76,7 @@ export type JevRequest = {
 export type JevResult = {
   tierProbabilities?: Partial<Record<Tier, number>>
   signals: Signals
+  version?: string // the Jev model that answered, which jev-latest does not name
 }
 
 // Keeps the head and the tail: a pasted log often ends with the actual ask.
@@ -85,6 +85,10 @@ export function clip(text: string, max: number): string {
   const half = Math.floor(max / 2)
   return `${text.slice(0, half)}\n…\n${text.slice(text.length - half)}`
 }
+
+// Drops the half of an emoji that a cut left behind: with the u flag a whole
+// pair is one character, so only a lone surrogate matches.
+const whole = (text: string) => text.replace(/\p{Cs}/gu, '')
 
 // The first turn asks for a tier among `tiers` (two at least, or there is
 // nothing to choose); later turns ask whether the prompt continues the task
@@ -99,9 +103,9 @@ export function buildRequest(input: {
   previous?: { model?: string; effort?: string }
 }): JevRequest {
   const { jevModel, prompt, isFirstTurn, tiers, previousPrompt, replyTail, previous } = input
-  const state: JevState = { prompt: clip(prompt, PROMPT_CHARS) }
-  if (previousPrompt) state.previous_prompt = clip(previousPrompt, CONTEXT_CHARS)
-  if (replyTail) state.previous_reply_tail = replyTail // the caller keeps assistant_tail_chars of it
+  const state: JevState = { prompt: whole(clip(prompt, PROMPT_CHARS)) }
+  if (previousPrompt) state.previous_prompt = whole(previousPrompt) // the caller keeps 1000 chars of it
+  if (replyTail) state.previous_reply_tail = whole(replyTail) // the caller keeps assistant_tail_chars of it
   if (previous) state.previous = previous
 
   const questions: JevRequest['questions'] = {}
@@ -154,6 +158,8 @@ export function parseAnswers(text: string): JevResult | undefined {
   }
 
   const result: JevResult = { signals }
+  const version = field(body, 'model')
+  if (typeof version === 'string') result.version = version
   const probabilities = field(field(answers, 'tier'), 'probabilities')
   const tierProbabilities: Partial<Record<Tier, number>> = {}
   for (const tier of TIERS) {

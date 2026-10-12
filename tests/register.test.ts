@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, EASY, STRONG, command, drain, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
+import { AUTO, EASY, STRONG, command, commandText, drain, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
 
 describe('auto mode', () => {
   test('a hard first prompt moves every step of the session to the strong model', AUTO, async ($, on) => {
@@ -50,6 +50,21 @@ describe('auto mode', () => {
       previous_prompt: 'redesign the sync engine',
       previous: { model: 'claude-opus-5-5', effort: 'high' },
     })
+  })
+
+  test("an effort the engine changes mid-turn, as a skill's own does, rides the rest of the turn", AUTO, async ($, on) => {
+    const w = world(on, { reply: EASY })
+    await start($)
+    const models = ['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5']
+    await turn($, 'rename foo to bar', 't1', { models, efforts: ['high', 'max', 'high'] })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'max', 'high'])
+  })
+
+  test('a session already on the chosen model keeps its [1m] suffix', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5[1m]'], effort: 'medium' })
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5[1m]', effort: 'high' }])
   })
 
   test("a subagent's steps pass untouched", AUTO, async ($, on) => {
@@ -131,11 +146,28 @@ describe('ultracode', () => {
       'drop the ultracode-mode flag',
       'read docs/ultracode.md',
       '/tmp/build.log ultracode this',
+      'retry it (ultracode) later',
+      'set {ultracode} in the template',
+      'tick [ultracode] in the list',
+      'see the <ultracode> tag',
+      "say 'ultracode' here",
+      'see docs/ultracode now',
+      'open C:\\ultracode',
+      'pass --ultracode',
+      'open ultracode/README',
+      'open ultracode\\bin',
     ]
     for (const [i, text] of prompts.entries()) {
       await turn($, text, `t${i}`)
       expect(w.status.at(-1)).not.toContain('ultracode')
     }
+  })
+
+  test('a keyword that ends a sentence counts', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'audit every module with ultracode.', 't1')
+    expect(w.status.at(-1)).toContain('ultracode')
   })
 
   test('a turn the person did not type is never an ultracode turn', AUTO, async ($, on) => {
@@ -160,7 +192,18 @@ describe('the status line shows what was sent', () => {
     await start($)
     await turn($, 'what does git stash do', 't1')
     expect(w.status.at(-1)).toBe('jcmr ▸ haiku-4-5-20251001·-')
-    expect((await command($, 'log 1')).text).toContain('haiku-4-5-20251001·-  jev haiku-4-5-20251001·low')
+    const log = (await command($, 'log 1')).text
+    expect(log).toContain('haiku-4-5-20251001·-')
+    expect(log).not.toContain('jev')
+  })
+
+  test('a model rewritten without an effort of the router\'s own shows its effort as unknown', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: 'medium' })
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'medium' }])
+    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·? · jev opus-5-5·high')
+    expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
   test("a request without effort shows the model's default", async ($, on) => {
@@ -208,6 +251,35 @@ describe('shadow mode', () => {
     expect((await command($, '')).text).toContain('sent: opus-5-5·high · served sonnet-5-5')
   })
 
+  test("the status line's jev is Jev's own pick, as in the log, whatever the person set", { options: { low_model: 'sonnet' } }, async ($, on) => {
+    const w = world(on, { reply: EASY })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
+    await command($, 'pin opus')
+    await turn($, 'rename bar to baz', 't2', { models: ['claude-opus-5-5'] })
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high · jev sonnet-5-5·low · model pinned')
+    expect((await command($, 'log 1')).text).toContain('opus-5-5·high  jev sonnet-5-5·low')
+    await turn($, 'rename baz to qux', 't3', { models: ['claude-opus-5-5'], effort: 'max' })
+    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·max · jev sonnet-5-5·low · model pinned · effort pinned')
+  })
+
+  test('a pin, a /model switch and a changed effort still send every request unchanged', async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await command($, 'pin haiku')
+    await turn($, 'ok', 't2')
+    await switchModel($, 'claude-sonnet-5-5', 'claude-fable-5-1', 'command')
+    await turn($, 'go on', 't3', { models: ['claude-fable-5-1'] })
+    await turn($, 'and the rest', 't4', { models: ['claude-fable-5-1'], effort: 'max' })
+    expect(w.steps).toEqual([
+      { model: 'claude-sonnet-5-5', effort: 'high' },
+      { model: 'claude-sonnet-5-5', effort: 'high' },
+      { model: 'claude-fable-5-1', effort: 'high' },
+      { model: 'claude-fable-5-1', effort: 'max' },
+    ])
+  })
+
   test('leaves a lower effort judgement unapplied too', { options: { low_model: 'sonnet' } }, async ($, on) => {
     const w = world(on, { reply: EASY })
     await start($)
@@ -236,6 +308,27 @@ describe('failing open', () => {
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
     expect(w.status.at(-1)).toContain('Jev HTTP 401')
+  })
+
+  test('a Jev that cannot be reached leaves the first turn alone and says why', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, offline: true })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'redesign the sync engine', 't2')
+    expect(w.fetches).toHaveLength(2)
+    expect(w.asked[1].questions.tier).toBeUndefined()
+    expect(w.steps).toEqual([
+      { model: 'claude-sonnet-5-5', effort: 'high' },
+      { model: 'claude-sonnet-5-5', effort: 'high' },
+    ])
+    expect(w.status.at(-1)).toContain('Jev network error')
+  })
+
+  test('a store that will not take the decision still asks Jev only once a turn', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, storeFails: key => key.startsWith('log:') })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'] })
+    expect(w.asked).toHaveLength(1)
   })
 
   test('a Jev that does not answer in 3 seconds, the default, is not waited for', AUTO, async ($, on) => {
@@ -290,7 +383,7 @@ describe('overrides', () => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    await switchModel($, 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001')
+    await switchModel($, 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'sdk')
     await turn($, 'ok', 't2', { models: ['claude-haiku-4-5-20251001'], effort: null })
     expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
   })
@@ -318,18 +411,26 @@ describe('/jcmr', () => {
     world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    const report = await command($, '')
-    expect(report.text).toContain('jcmr: auto (default)')
-    expect(report.text).toContain('claude-opus-5-5 (chosen on the first turn)')
-    expect(report.text).toContain('effort: high')
-    expect(report.text).toContain('tier strong 0.80')
-    expect(report.text).toContain('effort 2.20')
-    expect(report.text).toContain('high stakes 0.10')
-    expect(report.text).toContain('sent: opus-5-5·high')
-    const log = await command($, 'log')
-    expect(log.text).toContain('opus-5-5·high')
-    expect(log.text).not.toContain('jev')
-    expect(log.text).toContain('redesign the sync engine')
+    expect((await command($, '')).text).toBe(
+      [
+        'jcmr: auto (default)',
+        'model: claude-opus-5-5 (chosen on the first turn)',
+        'effort: high',
+        'tiers: low haiku-4-5-20251001 · balanced sonnet-5-5 · strong opus-5-5 · long fable-5-1',
+        'last turn: tier strong 0.80 / balanced 0.15 / low 0.05 · effort 2.20 · high stakes 0.10',
+        'sent: opus-5-5·high',
+      ].join('\n'),
+    )
+    expect((await command($, 'log')).text).toMatch(/^```\n\d\d-\d\d \d\d:\d\d  auto   opus-5-5·high  first  "redesign the sync engine"\n```$/)
+  })
+
+  test("names the Jev version that answered, and a tier's built-in, unused or off model", { options: { default_mode: 'auto', long_model: 'off' } }, async ($, on) => {
+    world(on, { reply: { ...STRONG, model: 'jev-1.13.0' }, catalog: null, answeredAs: 'claude-sonnet-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const report = (await command($, '')).text.split('\n')
+    expect(report[3]).toBe('tiers: low haiku-5-5 (built-in) · balanced sonnet-5-5 (built-in) · strong opus-5-5 (built-in, not served) · long off')
+    expect(report[4]).toBe('last turn: tier strong 0.80 / balanced 0.15 / low 0.05 · effort 2.20 · high stakes 0.10 (jev-1.13.0)')
   })
 
   test('/jcmr off turns this session off', AUTO, async ($, on) => {
@@ -351,5 +452,46 @@ describe('/jcmr', () => {
     w.session = 'session-2'
     await turn($, 'redesign the sync engine', 't2')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+  })
+})
+
+describe('/jcmr-status off a first-party login', () => {
+  test('tells a tier set to off from an alias that cannot resolve', { options: { long_model: 'off' } }, async ($, on) => {
+    world(on, { thirdParty: true })
+    await start($)
+    expect((await command($, '')).text).toContain(
+      'tiers: low off (alias needs an Anthropic login) · balanced off (alias needs an Anthropic login) · strong off (alias needs an Anthropic login) · long off',
+    )
+  })
+})
+
+describe('settings', () => {
+  test('min_effort is the lowest effort set', { options: { default_mode: 'auto', min_effort: 'medium' } }, async ($, on) => {
+    const w = world(on, { reply: EASY })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'medium' }])
+  })
+
+  test('signal_threshold sets when a high-stakes task counts', { options: { default_mode: 'auto', signal_threshold: 0.4 } }, async ($, on) => {
+    const w = world(on, { reply: { answers: { ...EASY.answers, high_stakes: { type: 'noul', noul: 0.5 } } } })
+    await start($)
+    await turn($, 'drop the users table', 't1', { effort: 'medium' })
+    expect(w.steps.at(-1)?.effort).toBe('high')
+  })
+
+  test('continuation_threshold sets when a prompt keeps the last effort', { options: { default_mode: 'auto', continuation_threshold: 0.95 } }, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2')
+    expect(w.steps.map(s => s.effort)).toEqual(['high', 'low'])
+  })
+
+  test('tier_min_probability sets when the model changes', { options: { default_mode: 'auto', tier_min_probability: 0.9 } }, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
   })
 })

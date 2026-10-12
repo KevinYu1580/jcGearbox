@@ -65,7 +65,23 @@ describe('buildRequest', () => {
       previousPrompt: 'y'.repeat(3000),
     })
     expect(body.state.prompt.length).toBe(6003)
-    expect(body.state.previous_prompt?.length).toBe(1003)
+    expect(body.state.previous_prompt?.length).toBe(3000) // the caller keeps 1000 chars of it
+  })
+
+  test('a cut through an emoji drops its half rather than send a lone surrogate', () => {
+    const emoji = '😀'
+    const body = buildRequest({
+      jevModel: 'jev-latest',
+      prompt: `${'a'.repeat(2999)}${emoji}${'b'.repeat(3001)}`,
+      isFirstTurn: false,
+      previousPrompt: `${emoji}tail`,
+      replyTail: `${emoji.slice(1)}${'c'.repeat(10)}`, // a tail cut through the emoji
+    })
+    const lone = /\p{Cs}/u
+    expect(lone.test(body.state.prompt)).toBe(false)
+    expect(body.state.prompt.startsWith('a'.repeat(2999))).toBe(true)
+    expect(body.state.previous_prompt).toBe(`${emoji}tail`)
+    expect(lone.test(body.state.previous_reply_tail ?? '')).toBe(false)
   })
 
   test('each question has the type Jev expects', () => {
@@ -93,6 +109,7 @@ describe('parseAnswers', () => {
     expect(parseAnswers(text)).toEqual({
       tierProbabilities: { balanced: 0.2, strong: 0.8 },
       signals: { effortScore: 2.4, continuation: 0.1, escalate: 0.05, highStakes: 0.9 },
+      version: 'jev-1.13.0',
     })
   })
 

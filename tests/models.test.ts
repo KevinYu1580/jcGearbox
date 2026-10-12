@@ -26,6 +26,11 @@ describe('versionAtLeast', () => {
 })
 
 describe('catalogModel', () => {
+  test('skips a disabled model', () => {
+    const models = [{ id: 'claude-sonnet-6', short_name: 'Sonnet', section: 'main', disabled: true }, ...catalog.catalog.config.models]
+    expect(catalogModel({ catalog: { config: { models } } }, 'sonnet', '2.1.286')).toBe('claude-sonnet-5-5')
+  })
+
   test("takes the family's main model this version supports", () => {
     expect(catalogModel(catalog, 'sonnet', '2.1.286')).toBe('claude-sonnet-5-5')
     expect(catalogModel(catalog, 'opus', '2.1.286')).toBe('claude-opus-5-5')
@@ -74,6 +79,14 @@ describe('resolveModel', () => {
 
   test('the built-in table names the current Haiku', () => {
     expect(resolveModel('haiku', { firstParty: true, version: '2.1.296' })).toEqual({ id: 'claude-haiku-5-5', source: 'builtin' })
+  })
+
+  test('an alias with [1m] resolves as that alias and keeps the suffix', () => {
+    expect(resolveModel('opus[1m]', firstParty)).toEqual({ id: 'claude-opus-5-5[1m]', source: 'catalog' })
+    expect(resolveModel('Sonnet[1M]', firstParty)).toEqual({ id: 'claude-sonnet-5-5[1m]', source: 'catalog' })
+    expect(resolveModel('fable[1m]', firstParty)).toEqual({ id: 'claude-fable-5-1[1m]', source: 'builtin' })
+    expect(resolveModel('opus[1m]', { firstParty: false, catalog, version: '2.1.286' })).toBeUndefined()
+    expect(resolveModel('claude-opus-5-5[1m]', firstParty)).toEqual({ id: 'claude-opus-5-5[1m]', source: 'config' })
   })
 
   test('an alias means nothing off a first-party login', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
+import type { Plugin } from 'claude-code/testing'
 
 import { AUTO, CONTINUE, EASY, STRONG, command, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
 import type { World } from './world.ts'
@@ -32,6 +33,26 @@ describe('session decisions', () => {
     await turn($, 'ok', 't1')
     expect(w.asked[0].questions.tier).toBeUndefined()
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'xhigh' }])
+  })
+
+  test("a resumed session's first turn takes the engine's effort as it finds it, not as the person's change", AUTO, async ($, on) => {
+    const w = world(on, {
+      reply: CONTINUE,
+      store: {
+        'session:session-1': {
+          decided: true,
+          model: 'claude-opus-5-5',
+          effort: 'xhigh',
+          rawEffort: 'medium',
+          rawModel: 'claude-sonnet-5-5',
+        },
+      },
+    })
+    await start($)
+    await turn($, 'ok', 't1', { effort: 'high' })
+    await turn($, 'go on', 't2', { effort: 'high' })
+    expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
+    expect(w.status.at(-1)).not.toContain('effort pinned')
   })
 
   test('a new session id decides its model again', AUTO, async ($, on) => {
@@ -105,6 +126,60 @@ describe('session decisions', () => {
     await turn($, 'go on', 't3', { models: ['claude-haiku-4-5-20251001'] })
     expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
     expect((await command($, '')).text).toContain('your choice (/model)')
+  })
+
+  test('a model switch while the decision is being written down is kept', AUTO, async ($, on) => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    let holding = false
+    const w = world(on, { reply: firstStrongThenContinue, storeHolds: key => (holding && key.startsWith('log:') ? held : undefined) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    holding = true
+    const t2 = turn($, 'ok', 't2')
+    await w.clock.settle()
+    const switched = switchModel($, 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'command')
+    await w.clock.settle()
+    holding = false
+    release()
+    await Promise.all([t2, switched])
+    await turn($, 'go on', 't3', { models: ['claude-haiku-4-5-20251001'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
+  })
+
+  // A hook above that settles first abandons the ones below, as the person interrupting does.
+  const interrupter: Plugin = {
+    name: 'interrupter',
+    tier: 'prepend',
+    register(on) {
+      on('turn.step', async function* ($, e, next) {
+        if (e.turnId !== 't1') return yield* next(e)
+        void next(e).next()
+        await $.clock.sleep(10)
+        return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: null, usage: null }
+      })
+    },
+  }
+
+  test('an interruption while Jev is answering decides nothing', { plugins: [interrupter], options: { default_mode: 'auto' } }, async ($, on) => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const w = world(on, { reply: STRONG, gate: body => (w.asked.length === 1 ? held : undefined) })
+    await start($)
+    const t1 = turn($, 'redesign the sync engine', 't1')
+    await w.clock.settle()
+    await w.clock.advance(10)
+    await t1
+    release()
+    await w.clock.settle()
+    expect(w.db.get('session:session-1')).toBeUndefined()
+    expect(w.status.join('\n')).not.toContain('Jev timeout')
+    await turn($, 'redesign the sync engine', 't2')
+    expect(w.asked[1].questions.tier).toBeDefined()
   })
 })
 

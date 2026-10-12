@@ -71,6 +71,12 @@ describe('decideEffort', () => {
       signals: { effortScore: 0.4, highStakes: 0.8 },
     })
     expect(r.effort).toBe('high')
+    expect(decideEffort({ ...base, isFirstTurn: true, previous: undefined, signals: { effortScore: 0, highStakes: 0.8 } }).effort).toBe('high')
+  })
+
+  test('without a score, a new task keeps the previous effort, and with none there is nothing to decide', () => {
+    expect(decideEffort({ ...base, isFirstTurn: false, previous: 'high', signals: { continuation: 0.1 } }).effort).toBe('high')
+    expect(decideEffort({ ...base, isFirstTurn: false, previous: undefined, signals: { continuation: 0.1 } }).effort).toBeUndefined()
   })
 
   test('the floor applies last', () => {
@@ -175,6 +181,7 @@ describe('effortFor', () => {
     expect(effortFor('claude-opus-4-5-20251101', 'medium')).toBe('medium')
     expect(effortFor('claude-opus-4-6', 'xhigh')).toBe('high')
     expect(effortFor('claude-sonnet-4-6', 'max')).toBe('max')
+    expect(effortFor('claude-sonnet-4-6', 'xhigh')).toBe('high')
   })
 
   test('current models and unknown ids take every level', () => {

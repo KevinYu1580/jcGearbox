@@ -23,6 +23,7 @@ export type WorldOptions = {
   httpStatus?: number
   hang?: boolean // Jev never answers (until the mocked clock moves on 60 s)
   gate?: (body: any) => Promise<unknown> | undefined // Jev answers this request once the promise settles
+  offline?: boolean // the Jev request fails before any response
   noKey?: boolean
   version?: string
   answeredAs?: string // the model the API says answered every request
@@ -32,8 +33,10 @@ export type WorldOptions = {
   refusalFrom?: string // a request naming this model is declined (stop reason 'refusal')
   catalog?: unknown // null: no catalog file
   thirdParty?: boolean // $.session.authorize() answers null
-  env?: Record<string, string>
+  env?: Record<string, string | undefined> // undefined: the variable is not set
   store?: Record<string, unknown> // $.store's contents at the start
+  storeFails?: (key: string) => boolean // a store.set of this key throws
+  storeHolds?: (key: string) => Promise<unknown> | undefined // a store.set of this key waits for the promise
 }
 
 export const FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -64,16 +67,20 @@ export function world(on: On, o: WorldOptions = {}): World {
     messages: [],
     clock: mock.clock(on),
   }
-  const env: Record<string, string> = {
-    HOME: '/home/u',
-    CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
-    ...(o.noKey ? {} : { TYPESAFE_API_KEY: 'test-key' }),
-    ...o.env,
-  }
+  const env = Object.fromEntries(
+    Object.entries({
+      HOME: '/home/u',
+      CLAUDE_CODE_ENTRYPOINT: 'claude-desktop',
+      ...(o.noKey ? {} : { TYPESAFE_API_KEY: 'test-key' }),
+      ...o.env,
+    }).filter((kv): kv is [string, string] => kv[1] !== undefined),
+  )
   mock.env(on, env)
   // A Map keeps a key where it was first set, as the engine's store does.
   on('store.get', ($, e) => ({ value: w.db.get(e.key) }))
-  on('store.set', ($, e) => {
+  on('store.set', async ($, e) => {
+    await o.storeHolds?.(e.key)
+    if (o.storeFails?.(e.key)) throw new Error(`store full: ${e.key}`)
     w.db.set(e.key, JSON.parse(JSON.stringify(e.value)))
     return { value: undefined }
   })
@@ -110,7 +117,8 @@ export function world(on: On, o: WorldOptions = {}): World {
     w.fetches.push({ url: e.url, method: e.init?.method, headers: e.init?.headers, body })
     await o.gate?.(body)
     if (o.hang) await w.clock.sleep(60_000)
-    const reply = typeof o.reply === 'function' ? (o.reply as (b: any) => unknown)(body) : o.reply
+    if (o.offline) throw new Error('getaddrinfo ENOTFOUND api.typesafe.ai')
+    const reply = asked(body, typeof o.reply === 'function' ? (o.reply as (b: any) => unknown)(body) : o.reply)
     const status = o.httpStatus ?? 200
     return { value: { status, ok: status < 300, headers: {}, text: JSON.stringify(reply ?? {}) } }
   })
@@ -153,6 +161,12 @@ export function world(on: On, o: WorldOptions = {}): World {
   return w
 }
 
+// Jev answers only the questions it was asked.
+function asked(body: any, reply: any) {
+  if (typeof reply !== 'object' || reply === null || typeof reply.answers !== 'object') return reply
+  return { ...reply, answers: Object.fromEntries(Object.entries(reply.answers).filter(([q]) => q in body.questions)) }
+}
+
 export const start = ($: any) => $.session.start({ cwd: '/work', surface: null, isInteractive: false })
 
 export async function drain(stream: any) {
@@ -166,6 +180,7 @@ export type TurnOptions = {
   origin?: string // prompt.submit's origin.kind (default 'sdk')
   models?: string[] // the engine's model for each step (default one sonnet step)
   effort?: string | null // the engine's effort on each step (default 'high'; null: none)
+  efforts?: (string | null)[] // the engine's effort step by step, in place of `effort`
   startText?: string // turn.start's text when the engine changed what was submitted
   submit?: boolean // false: the turn starts with no prompt.submit
   answer?: string // the turn's final answer
@@ -184,10 +199,12 @@ export async function turn($: any, text: string, turnId: string, o: TurnOptions 
   }
   const models = o.models ?? ['claude-sonnet-5-5']
   for (const [index, model] of models.entries()) {
-    const effort = o.effort === null ? undefined : (o.effort ?? 'high')
+    const set = o.efforts ? o.efforts[index] : o.effort
+    const effort = set === null ? undefined : (set ?? 'high')
     await drain($.turn.step({ turnId, index, model, messageCount: 2 + index, ...(effort ? { effort } : {}) }))
   }
-  await $.turn.complete({ answer: o.answer ?? 'done', durationMs: 5, isAborted: false, turnId, reason: o.reason ?? 'answer' })
+  const reason = o.reason ?? 'answer'
+  await $.turn.complete({ answer: o.answer ?? 'done', durationMs: 5, isAborted: reason === 'aborted', turnId, reason })
 }
 
 // The text a slash command's turn starts from, as the engine builds it.

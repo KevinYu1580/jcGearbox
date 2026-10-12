@@ -4,11 +4,6 @@ import { AUTO, EASY, STRONG, command, firstStrongThenContinue, run, start, switc
 
 const HAIKU = 'claude-haiku-4-5-20251001'
 
-// Jev answers only the questions it was asked.
-const answering = (reply: any) => (body: any) => ({
-  answers: Object.fromEntries(Object.entries(reply.answers).filter(([q]) => q in body.questions)),
-})
-
 const COMPLAINT = {
   answers: {
     effort: { type: 'score', score: 0.2 },
@@ -223,7 +218,7 @@ describe('/jcmr log', () => {
     await turn($, 'one', 't1')
     await turn($, 'two', 't2')
     await turn($, 'three', 't3')
-    const lines = (await command($, 'log 2')).text.split('\n')
+    const lines = (await command($, 'log 2')).text.split('\n').slice(1, -1)
     expect(lines).toHaveLength(2)
     expect(lines[0]).toContain('"two"')
     expect(lines[1]).toContain('"three"')
@@ -235,7 +230,17 @@ describe('/jcmr log', () => {
     await turn($, 'one', 't1')
     await turn($, 'two', 't2')
     await turn($, 'three', 't3')
-    expect((await command($, 'log -3')).text.split('\n')).toHaveLength(3)
+    expect((await command($, 'log -3')).text.split('\n').slice(1, -1)).toHaveLength(3)
+  })
+
+  test('shows each prompt escaped on one line, in a code block', async ($, on) => {
+    world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'fix this:\n```\nboom\n```', 't1')
+    const lines = (await command($, 'log')).text.split('\n')
+    expect(lines).toHaveLength(3)
+    expect([lines[0], lines[2]]).toEqual(['```', '```'])
+    expect(lines[1]?.endsWith('  "fix this:\\n```\\nboom\\n```"')).toBe(true)
   })
 })
 
@@ -287,6 +292,45 @@ describe('a model that is not served', () => {
     expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
   })
 
+  test('a model is blamed once however its turn went wrong', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, noResponseOnce: 'claude-opus-5-5', answeredAs: 'claude-sonnet-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'], reason: 'error' })
+    expect((w.db.get('session:session-1') as any).badModels).toEqual(['claude-opus-5-5'])
+  })
+
+  test('a model that got no response and then declined is blamed once', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, noResponseOnce: 'claude-opus-5-5', refusalFrom: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-5-5', 'claude-sonnet-5-5'], reason: 'error' })
+    expect((w.db.get('session:session-1') as any).badModels).toEqual(['claude-opus-5-5'])
+  })
+
+  test('an answer from another generation of the model is not taken for it', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, answeredAs: 'claude-opus-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.status.at(-1)).toBe('jcmr: opus-5-5 was not used (opus-5 answered); not switching to it again')
+  })
+
+  test("the model under Vertex's dated id is not blamed for answering under its API id", { options: { default_mode: 'auto', strong_model: 'claude-opus-5-5@20261001' } }, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, answeredAs: 'claude-opus-5-5-20261001' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5@20261001', 'claude-opus-5-5@20261001'])
+    expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
+  test('a model id that names no Claude model, such as a Bedrock profile ARN, is not checked', { options: { default_mode: 'auto', strong_model: 'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123' } }, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, answeredAs: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2')
+    expect(w.steps.at(-1)?.model).toContain('application-inference-profile')
+    expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
   test('a turn that ended otherwise than in an error blames no model', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue, noResponseFrom: 'claude-opus-5-5' })
     await start($)
@@ -306,7 +350,7 @@ describe('a model that is not served', () => {
 
 describe('tiers that all resolve to one model', () => {
   test('ask no tier question and keep the engine model', { options: { default_mode: 'auto', low_model: 'sonnet', strong_model: 'sonnet', long_model: 'off' } }, async ($, on) => {
-    const w = world(on, { reply: answering(STRONG) })
+    const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'] })
     expect(w.asked[0].questions.tier).toBeUndefined()
@@ -314,7 +358,7 @@ describe('tiers that all resolve to one model', () => {
   })
 
   test('off turns a tier off', { options: { default_mode: 'auto', low_model: 'off', balanced_model: 'OFF', long_model: 'off' } }, async ($, on) => {
-    const w = world(on, { reply: answering(STRONG) })
+    const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.asked[0].questions.tier).toBeUndefined()
@@ -336,10 +380,16 @@ describe('the /jcmr-<action> commands', () => {
     expect((await run($, 'jcmr-pin', 'sonnet')).text).toContain('model pinned to claude-sonnet-5-5')
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
-    expect((await run($, 'jcmr-log', '1')).text.split('\n')).toHaveLength(1)
+    expect((await run($, 'jcmr-log', '1')).text.split('\n')).toHaveLength(3)
     expect((await run($, 'jcmr-off')).text).toBe('jcmr: off for this session.')
     await turn($, 'one more', 't3')
     expect(w.asked).toHaveLength(2)
+  })
+
+  test('each one is answered', async ($, on) => {
+    const w = world(on)
+    await start($)
+    for (const name of w.registered) expect((await run($, name)).text).toBeDefined()
   })
 
   test('/jcmr-on keeps a pin', AUTO, async ($, on) => {
