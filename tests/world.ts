@@ -24,6 +24,8 @@ export type WorldOptions = {
   hang?: boolean // Jev never answers (until the mocked clock moves on 60 s)
   gate?: (body: any) => Promise<unknown> | undefined // Jev answers this request once the promise settles
   offline?: boolean // the Jev request fails before any response
+  failures?: Record<number, number | 'offline'> // the Jev requests at these positions (from 0) fail: an HTTP status, or no response
+  rateLimits?: { kind: string; percentUsed: number }[] // what $.session.usage() reports
   noKey?: boolean
   version?: string
   answeredAs?: string // the model the API says answered every request
@@ -37,6 +39,8 @@ export type WorldOptions = {
   store?: Record<string, unknown> // $.store's contents at the start
   storeFails?: (key: string) => boolean // a store.set of this key throws
   storeHolds?: (key: string) => Promise<unknown> | undefined // a store.set of this key waits for the promise
+  stepHold?: () => Promise<unknown> | undefined // a model request streams a chunk, then waits for the promise
+  noUsage?: boolean // $.session.usage() fails, as on a Claude Code without it
 }
 
 export const FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -117,11 +121,17 @@ export function world(on: On, o: WorldOptions = {}): World {
     w.fetches.push({ url: e.url, method: e.init?.method, headers: e.init?.headers, body })
     await o.gate?.(body)
     if (o.hang) await w.clock.sleep(60_000)
-    if (o.offline) throw new Error('getaddrinfo ENOTFOUND api.typesafe.ai')
+    const failure = o.failures?.[w.fetches.length - 1]
+    if (o.offline || failure === 'offline') throw new Error('getaddrinfo ENOTFOUND api.typesafe.ai')
     const reply = asked(body, typeof o.reply === 'function' ? (o.reply as (b: any) => unknown)(body) : o.reply)
-    const status = o.httpStatus ?? 200
+    const status = failure ?? o.httpStatus ?? 200
     return { value: { status, ok: status < 300, headers: {}, text: JSON.stringify(reply ?? {}) } }
   })
+  on('session.usage', () => {
+    if (o.noUsage) throw new Error('session.usage is not available')
+    return { value: { startedAt: 0, context: {} as any, rateLimits: o.rateLimits ?? [] } }
+  })
+  on('command.run', () => ({ text: '' })) // a built-in command, run by the engine
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('classic.SessionStart', () => ({}))
   // As in the engine, the turn starts before the submit settles.
@@ -141,6 +151,11 @@ export function world(on: On, o: WorldOptions = {}): World {
       (o.noResponseOnce === e.model && !once.has(e.model)) ||
       !!o.noResponseAt?.includes(w.steps.length - 1)
     if (o.noResponseOnce === e.model) once.add(e.model)
+    const hold = o.stepHold?.()
+    if (hold) {
+      yield { kind: 'text', index: 0, text: 'hel' } as any
+      await hold
+    }
     return {
       turnId: e.turnId,
       index: e.index,
@@ -241,6 +256,14 @@ export const STRONG = {
 export const EASY = {
   answers: {
     tier: { type: 'choice', choice: 'balanced', probabilities: { low: 0.3, balanced: 0.4, strong: 0.3 }, confidence: 0.2 },
+    effort: { type: 'score', score: 0.3 },
+    high_stakes: { type: 'noul', noul: 0.05 },
+  },
+}
+// Jev sure that a weaker model will do: low and balanced add up to 0.85.
+export const SURE_EASY = {
+  answers: {
+    tier: { type: 'choice', choice: 'balanced', probabilities: { low: 0.4, balanced: 0.45, strong: 0.15 }, confidence: 0.6 },
     effort: { type: 'score', score: 0.3 },
     high_stakes: { type: 'noul', noul: 0.05 },
   },

@@ -92,30 +92,59 @@ export function decideEffort(input: {
   return { effort: atMost(atLeast(effort, minEffort), maxEffort), escalated }
 }
 
-// Tiers that resolve to the same model pool their probability; the model
-// changes only when the pooled pick reaches the minimum.
+// Tiers weakest first.
+const LADDER: readonly Tier[] = ['low', 'balanced', 'strong', 'long']
+
+// The model the first turn moves the session to, or none to stay on the
+// engine's. Moving up to a tier takes `upgrade` of Jev's probability that the
+// task needs that tier or a stronger one; moving down, `downgrade` that it
+// needs that tier or a weaker one. The engine's model stands for the tiers it
+// is (`engine`); one that is none of them goes to the likeliest model, pooled
+// across the tiers on it, at `downgrade`.
 export function pickModel(input: {
   probabilities: Partial<Record<Tier, number>> | undefined
   models: Partial<Record<Tier, string>>
-  minProbability: number
+  engine: readonly Tier[]
+  upgrade: number
+  downgrade: number
 }): string | undefined {
-  const { probabilities, models, minProbability } = input
+  const { probabilities, models, engine, upgrade, downgrade } = input
   if (!probabilities) return undefined
+  const p = (i: number) => probabilities[LADDER[i] as Tier] ?? 0
+  const sum = (from: number, to: number) => {
+    let total = 0
+    for (let i = from; i <= to; i++) total += p(i)
+    return total
+  }
+
+  if (engine.length > 0) {
+    const ranks = engine.map(t => LADDER.indexOf(t))
+    const lo = Math.min(...ranks)
+    const hi = Math.max(...ranks)
+    for (let i = LADDER.length - 1; i > hi; i--) {
+      const model = models[LADDER[i] as Tier]
+      if (model && sum(i, LADDER.length - 1) >= upgrade) return model
+    }
+    for (let i = 0; i < lo; i++) {
+      const model = models[LADDER[i] as Tier]
+      if (model && sum(0, i) >= downgrade) return model
+    }
+    return undefined
+  }
 
   const pooled = new Map<string, number>()
   for (const tier of TIERS) {
     const model = models[tier]
-    const p = probabilities[tier]
-    if (model && p !== undefined) pooled.set(model, (pooled.get(model) ?? 0) + p)
+    const q = probabilities[tier]
+    if (model && q !== undefined) pooled.set(model, (pooled.get(model) ?? 0) + q)
   }
-
   let best: string | undefined
   let bestP = -1
-  for (const [model, p] of pooled) {
-    if (p > bestP) {
+  for (const [model, q] of pooled) {
+    if (q > bestP) {
       best = model
-      bestP = p
+      bestP = q
     }
   }
-  return best !== undefined && bestP >= minProbability ? best : undefined
+  return best !== undefined && bestP >= downgrade ? best : undefined
 }

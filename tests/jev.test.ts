@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { buildRequest, clip, parseAnswers } from '../hooks/jev.ts'
+import { buildRequest, clip, parseAnswers, redact } from '../hooks/jev.ts'
 
 describe('clip', () => {
   test('keeps short text whole', () => {
@@ -119,5 +119,36 @@ describe('parseAnswers', () => {
     expect(parseAnswers(JSON.stringify({ answers: { effort: { score: 'x' }, tier: { probabilities: { mystery: 1 } } } }))).toEqual({
       signals: {},
     })
+  })
+})
+
+describe('redact', () => {
+  test('hides the common key and token shapes, and leaves other text alone', () => {
+    const secrets = [
+      'sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789',
+      'sk-proj-AbCd3fGh1jKlMnOpQrStUvWx',
+      'ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789',
+      'github_pat_11AbCdEfGhIjKlMnOpQrSt_UvWxYz0123456789',
+      'AKIAIOSFODNN7EXAMPLE',
+      'xoxb-1234567890-abcdefghij',
+      'AIzaSyA-AbCdEfGhIjKlMnOpQrStUvWxYz01234',
+      'sk_live_AbCdEfGhIjKlMnOpQrStUvWx',
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+    ]
+    for (const secret of secrets) expect(redact(`key=${secret} done`)).toBe('key=[redacted] done')
+    const pem = '-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----'
+    expect(redact(`a ${pem} b`)).toBe('a [redacted] b')
+    const pgp = '-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----'
+    expect(redact(`a ${pgp} b`)).toBe('a [redacted] b')
+    expect(redact('aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY')).toBe('aws_secret_access_key = [redacted]')
+    expect(redact('AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"')).toBe('AWS_SECRET_ACCESS_KEY="[redacted]"')
+    const plain = 'rename skill-tree to tree; ask about AKIA docs; see sk-1 and eyJ.x.y; use sk-button-primary-large-variant or sk-grid-12-column-layout-wide'
+    expect(redact(plain)).toBe(plain)
+  })
+
+  test('every text sent to Jev is redacted', () => {
+    const key = 'ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+    const body = buildRequest({ jevModel: 'jev-latest', prompt: `use ${key}`, isFirstTurn: false, previousPrompt: key, replyTail: key })
+    expect(JSON.stringify(body.state)).not.toContain('ghp_')
   })
 })

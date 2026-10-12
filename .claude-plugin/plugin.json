@@ -50,13 +50,21 @@
       "description": "Default: fable. For agent sessions that run for hours and deep research, as Anthropic's model selection matrix places Claude Fable 5.1. Switching to it skips Claude Code's confirmation for models billed to usage credits. Type another alias or a full model id, or off to disable the tier.",
       "default": "fable"
     },
-    "tier_min_probability": {
+    "tier_upgrade_probability": {
       "type": "number",
-      "title": "Minimum tier probability",
-      "description": "Default: 0.6. On a session's first turn, the model changes only when Jev gives its pick at least this probability.",
+      "title": "Probability to move to a stronger model",
+      "description": "Default: 0.5. On a session's first turn, the model moves to a stronger tier's only when Jev gives at least this probability that the task needs that tier or a stronger one.",
       "min": 0,
       "max": 1,
-      "default": 0.6
+      "default": 0.5
+    },
+    "tier_min_probability": {
+      "type": "number",
+      "title": "Probability to move to a weaker model",
+      "description": "Default: 0.8. On a session's first turn, the model moves to a weaker tier's only when Jev gives at least this probability that the task needs that tier or a weaker one.",
+      "min": 0,
+      "max": 1,
+      "default": 0.8
     },
     "signal_threshold": {
       "type": "number",
@@ -109,7 +117,7 @@
     "jev_timeout_seconds": {
       "type": "number",
       "title": "Jev timeout (seconds)",
-      "description": "Default: 3. How long the first request of each prompt you type waits for Jev before going ahead without its answer. 0.5 to 8: Jev answers in well under a second, and every second waited delays the reply.",
+      "description": "Default: 3. How long a request whose model or effort Jev's answer can change waits for it before going ahead without it. A request it cannot change, as in shadow, goes at once, and only a reply quicker than Jev waits. 0.5 to 8: Jev answers in well under a second, and every second waited delays the reply.",
       "min": 0.5,
       "max": 8,
       "default": 3

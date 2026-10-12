@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { AUTO, CONTINUE, EASY, STRONG, command, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
+import { AUTO, CONTINUE, EASY, STRONG, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
 import type { World } from './world.ts'
 
 const keys = (w: World, prefix: string) => [...w.db.keys()].filter(k => k.startsWith(prefix))
@@ -213,6 +213,28 @@ describe('a conversation that goes on under a new id', () => {
     expect(w.asked[1].questions.tier).toBeUndefined()
     expect(w.asked[1].state.previous_prompt).toBe('redesign the sync engine')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+  })
+
+  test("the person's /effort before a fork's first prompt is theirs", AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await goOn($, w, 'fork', forked(said('user', 'now the tests')))
+    await run($, 'effort', 'max')
+    await turn($, 'now the tests', 't2', { effort: 'max' })
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'max' })
+    expect((await command($, '')).text).toContain('effort: yours (you changed it)')
+  })
+
+  test("the person's switch in the picker before a fork's first prompt is theirs", AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await goOn($, w, 'fork', forked(said('user', 'now the tests')))
+    await switchModel($, 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'picker')
+    await turn($, 'now the tests', 't2', { models: ['claude-haiku-4-5-20251001'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
+    expect((await command($, '')).text).toContain('model: your choice (/model)')
   })
 
   test("a fork finds its session past a long reply that names none", AUTO, async ($, on) => {

@@ -86,6 +86,25 @@ export function clip(text: string, max: number): string {
   return `${text.slice(0, half)}\n…\n${text.slice(text.length - half)}`
 }
 
+// Common key and token shapes, so that a pasted secret reaches neither Jev
+// nor the plugin's store.
+const SECRETS = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----/g,
+  // A random key mixes capitals and digits, which a kebab-case name does not.
+  /\bsk-(?:ant-|proj-)?(?=[\w-]*[A-Z])(?=[\w-]*\d)[\w-]{20,}/g,
+  /(?<=aws_?secret_?(?:access_?)?key\s*[=:]\s*["']?)[A-Za-z0-9/+=]{40}/gi,
+  /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g,
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
+  /\bAIza[0-9A-Za-z_-]{35}/g,
+  /\b[rs]k_live_[0-9A-Za-z]{20,}/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+]
+
+export function redact(text: string): string {
+  return SECRETS.reduce((t, secret) => t.replace(secret, '[redacted]'), text)
+}
+
 // Drops the half of an emoji that a cut left behind: with the u flag a whole
 // pair is one character, so only a lone surrogate matches.
 const whole = (text: string) => text.replace(/\p{Cs}/gu, '')
@@ -103,9 +122,9 @@ export function buildRequest(input: {
   previous?: { model?: string; effort?: string }
 }): JevRequest {
   const { jevModel, prompt, isFirstTurn, tiers, previousPrompt, replyTail, previous } = input
-  const state: JevState = { prompt: whole(clip(prompt, PROMPT_CHARS)) }
-  if (previousPrompt) state.previous_prompt = whole(previousPrompt) // the caller keeps 1000 chars of it
-  if (replyTail) state.previous_reply_tail = whole(replyTail) // the caller keeps assistant_tail_chars of it
+  const state: JevState = { prompt: whole(clip(redact(prompt), PROMPT_CHARS)) }
+  if (previousPrompt) state.previous_prompt = whole(redact(previousPrompt)) // the caller keeps 1000 chars of it
+  if (replyTail) state.previous_reply_tail = whole(redact(replyTail)) // the caller keeps assistant_tail_chars of it
   if (previous) state.previous = previous
 
   const questions: JevRequest['questions'] = {}

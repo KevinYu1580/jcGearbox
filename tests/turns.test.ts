@@ -102,6 +102,17 @@ describe('slash commands', () => {
     expect((await command($, 'log 1')).text).not.toContain('command model')
   })
 
+  test("a first command's own model is not what the session's model is measured from", AUTO, async ($, on) => {
+    const LEANING_BALANCED = { answers: { ...STRONG.answers, tier: { type: 'choice', choice: 'balanced', probabilities: { balanced: 0.7, strong: 0.3 }, confidence: 0.4 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? LEANING_BALANCED : CONTINUE) })
+    await start($)
+    await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'sdk')
+    await turn($, '/quick x', 't1', { origin: 'composer', startText: commandText('quick', 'x'), models: ['claude-haiku-4-5-20251001'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
+    await turn($, 'ok', 't2', { models: ['claude-opus-5-5'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
   test('a command other than the one submitted is not a user turn', AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)

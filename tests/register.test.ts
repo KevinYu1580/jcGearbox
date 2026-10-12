@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, EASY, STRONG, command, commandText, drain, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
+import { AUTO, EASY, STRONG, SURE_EASY, command, commandText, drain, firstStrongThenContinue, start, switchModel, turn, world } from './world.ts'
 
 describe('auto mode', () => {
   test('a hard first prompt moves every step of the session to the strong model', AUTO, async ($, on) => {
@@ -17,8 +17,8 @@ describe('auto mode', () => {
     expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
   })
 
-  test('tiers on one model pool their probability: an easy prompt goes to sonnet', { options: { default_mode: 'auto', low_model: 'sonnet' } }, async ($, on) => {
-    const w = world(on, { reply: EASY })
+  test('tiers on one model pool their probability: a sure easy prompt goes down to sonnet', { options: { default_mode: 'auto', low_model: 'sonnet' } }, async ($, on) => {
+    const w = world(on, { reply: SURE_EASY })
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'low' }])
@@ -215,6 +215,17 @@ describe('the status line shows what was sent', () => {
 })
 
 describe('shadow mode', () => {
+  test('sends the request without waiting for Jev, and writes the decision down after', async ($, on) => {
+    const w = world(on, { reply: STRONG, hang: true })
+    await start($)
+    const done = turn($, 'redesign the sync engine', 't1')
+    await w.clock.settle()
+    expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
+    await w.clock.advance(3000)
+    await done
+    expect(w.status.at(-1)).toContain('Jev timeout')
+  })
+
   test('judges and shows, rewrites nothing', async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
@@ -252,7 +263,7 @@ describe('shadow mode', () => {
   })
 
   test("the status line's jev is Jev's own pick, as in the log, whatever the person set", { options: { low_model: 'sonnet' } }, async ($, on) => {
-    const w = world(on, { reply: EASY })
+    const w = world(on, { reply: SURE_EASY })
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
     await command($, 'pin opus')
@@ -281,7 +292,7 @@ describe('shadow mode', () => {
   })
 
   test('leaves a lower effort judgement unapplied too', { options: { low_model: 'sonnet' } }, async ($, on) => {
-    const w = world(on, { reply: EASY })
+    const w = world(on, { reply: SURE_EASY })
     await start($)
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5', 'claude-opus-5-5'] })
     expect(w.steps).toEqual([
@@ -315,13 +326,54 @@ describe('failing open', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'redesign the sync engine', 't2')
-    expect(w.fetches).toHaveLength(2)
-    expect(w.asked[1].questions.tier).toBeUndefined()
+    expect(w.fetches).toHaveLength(3) // the first turn asks twice
+    expect(w.asked[2].questions.tier).toBeUndefined()
     expect(w.steps).toEqual([
       { model: 'claude-sonnet-5-5', effort: 'high' },
       { model: 'claude-sonnet-5-5', effort: 'high' },
     ])
     expect(w.status.at(-1)).toContain('Jev network error')
+  })
+
+  test('a first turn asks Jev once more after a quick network error or 5xx', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, failures: { 0: 503 } })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.fetches).toHaveLength(2)
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test('only once, and not for a key error, nor with under a second left', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, failures: { 0: 503, 1: 'offline', 2: 401, 3: 502 }, gate: () => (w.fetches.length === 4 ? w.clock.sleep(2500) : undefined) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.fetches).toHaveLength(2)
+    expect(w.status.at(-1)).toContain('Jev network error')
+    w.session = 'session-2'
+    await turn($, 'redesign the sync engine', 't2')
+    expect(w.fetches).toHaveLength(3)
+    w.session = 'session-3'
+    const t3 = turn($, 'redesign the sync engine', 't3')
+    await w.clock.settle()
+    await w.clock.advance(2500)
+    await t3
+    expect(w.fetches).toHaveLength(4)
+  })
+
+  test('a later turn does not ask again', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, failures: { 1: 503 } })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2')
+    expect(w.fetches).toHaveLength(2)
+  })
+
+  test('a claude -p or Agent SDK run is left alone', AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' } })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.asked).toHaveLength(0)
+    expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
   })
 
   test('a store that will not take the decision still asks Jev only once a turn', AUTO, async ($, on) => {
@@ -370,10 +422,10 @@ describe('overrides', () => {
   test('/jcmr pin forces a model; /jcmr auto hands the session back to its first-turn choice', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
-    const pinned = await command($, 'pin sonnet')
-    expect(pinned.text).toContain('claude-sonnet-5-5')
-    await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'] })
-    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+    const pinned = await command($, 'pin haiku')
+    expect(pinned.text).toContain('claude-haiku-4-5-20251001')
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
     await command($, 'auto')
     await turn($, '繼續', 't2', { models: ['claude-sonnet-5-5'] })
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
@@ -394,6 +446,24 @@ describe('overrides', () => {
     await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'sdk')
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test("auto does not wait for Jev once its answer cannot change the request", AUTO, async ($, on) => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const w = world(on, { reply: firstStrongThenContinue, gate: body => (w.asked.length === 3 ? held : undefined) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2', { effort: 'low' })
+    const t3 = turn($, 'go on', 't3', { effort: 'low' })
+    await w.clock.settle()
+    expect(w.steps).toHaveLength(3)
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
+    release()
+    await t3
+    expect(w.status.at(-1)).toContain('effort pinned')
   })
 
   test('the person changing the effort pins it', AUTO, async ($, on) => {
@@ -488,10 +558,32 @@ describe('settings', () => {
     expect(w.steps.map(s => s.effort)).toEqual(['high', 'low'])
   })
 
-  test('tier_min_probability sets when the model changes', { options: { default_mode: 'auto', tier_min_probability: 0.9 } }, async ($, on) => {
+  test('tier_upgrade_probability sets when the model moves up', { options: { default_mode: 'auto', tier_upgrade_probability: 0.9 } }, async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
+  test('tier_min_probability sets when the model moves down, 0.8 by default', { options: { default_mode: 'auto', tier_min_probability: 0.9 } }, async ($, on) => {
+    const w = world(on, { reply: SURE_EASY })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test('an engine model no tier names stands for its family: an older Sonnet moves up like Sonnet', AUTO, async ($, on) => {
+    const LEANING_STRONG = { answers: { ...STRONG.answers, tier: { type: 'choice', choice: 'strong', probabilities: { balanced: 0.45, strong: 0.55 }, confidence: 0.3 } } }
+    const w = world(on, { reply: LEANING_STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-4-6'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+
+  test('an unsure easy prompt keeps the stronger model it started on', AUTO, async ($, on) => {
+    const w = world(on, { reply: EASY })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
+    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
   })
 })

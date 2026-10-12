@@ -140,34 +140,41 @@ describe('decideEffort', () => {
 })
 
 describe('pickModel', () => {
-  const models = { low: 'claude-sonnet-5-5', balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' }
+  const all = { low: 'claude-haiku-5-5', balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5', long: 'claude-fable-5-1' }
+  const pick = (probabilities: object | undefined, engine: string[], models: object = all) =>
+    pickModel({ probabilities, models, engine, upgrade: 0.5, downgrade: 0.8 } as any)
 
-  test('tiers that resolve to the same model add up', () => {
-    const picked = pickModel({ models, minProbability: 0.6, probabilities: { low: 0.35, balanced: 0.3, strong: 0.35 } })
-    expect(picked).toBe('claude-sonnet-5-5')
+  test('moves up once the tiers at and above one add up to the upgrade probability', () => {
+    expect(pick({ balanced: 0.45, strong: 0.3, long: 0.25 }, ['balanced'])).toBe('claude-opus-5-5')
+    expect(pick({ balanced: 0.55, strong: 0.3, long: 0.15 }, ['balanced'])).toBeUndefined()
   })
 
-  test('below the minimum probability nothing is picked', () => {
-    const picked = pickModel({
-      models: { balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' },
-      minProbability: 0.6,
-      probabilities: { balanced: 0.45, strong: 0.55 },
-    })
-    expect(picked).toBeUndefined()
+  test('moves up to the strongest tier that clears it', () => {
+    expect(pick({ strong: 0.2, long: 0.6, balanced: 0.2 }, ['balanced'])).toBe('claude-fable-5-1')
   })
 
-  test('the stronger model wins a tie', () => {
-    const picked = pickModel({
-      models: { balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' },
-      minProbability: 0.5,
-      probabilities: { balanced: 0.5, strong: 0.5 },
-    })
-    expect(picked).toBe('claude-opus-5-5')
+  test('moves down only once the tiers at and below one add up to the downgrade probability', () => {
+    expect(pick({ low: 0.3, balanced: 0.45, strong: 0.25 }, ['strong'])).toBeUndefined()
+    expect(pick({ low: 0.3, balanced: 0.55, strong: 0.15 }, ['strong'])).toBe('claude-sonnet-5-5')
+    expect(pick({ low: 0.85, balanced: 0.1, strong: 0.05 }, ['strong'])).toBe('claude-haiku-5-5')
   })
 
-  test('tiers without a model and missing answers are ignored', () => {
-    expect(pickModel({ models, minProbability: 0.6, probabilities: { long: 0.9, strong: 0.1 } })).toBeUndefined()
-    expect(pickModel({ models, minProbability: 0.6, probabilities: undefined })).toBeUndefined()
+  test('tiers on one model pool, and the engine model counts as every tier it is', () => {
+    const models = { low: 'claude-sonnet-5-5', balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' }
+    expect(pick({ low: 0.45, balanced: 0.4, strong: 0.15 }, ['strong'], models)).toBe('claude-sonnet-5-5')
+    expect(pick({ low: 0.3, balanced: 0.2, strong: 0.5 }, ['low', 'balanced'], models)).toBe('claude-opus-5-5')
+    expect(pick({ low: 0.9, balanced: 0.1 }, ['low', 'balanced'], models)).toBeUndefined()
+  })
+
+  test("with no tier for the engine's model, the likeliest model needs the downgrade probability", () => {
+    expect(pick({ balanced: 0.15, strong: 0.85 }, [])).toBe('claude-opus-5-5')
+    expect(pick({ balanced: 0.3, strong: 0.7 }, [])).toBeUndefined()
+  })
+
+  test('a tier with no model passes its share up, and no answer picks nothing', () => {
+    const models = { low: 'claude-haiku-5-5', balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' }
+    expect(pick({ balanced: 0.1, long: 0.9 }, ['balanced'], models)).toBe('claude-opus-5-5')
+    expect(pick(undefined, ['balanced'])).toBeUndefined()
   })
 })
 

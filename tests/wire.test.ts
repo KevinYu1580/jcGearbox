@@ -141,6 +141,66 @@ describe('on disk', () => {
     expect(prompt).toBe(`${'a'.repeat(500)}\n…\n${'b'.repeat(500)}`)
   })
 
+  test('a pasted key is kept as [redacted], in the session and the log alike', { options: { send_assistant_tail: true } }, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    const key = 'ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
+    await turn($, `push with ${key}`, 't1', { answer: `Pushed with ${key}` })
+    const stored = JSON.stringify([...w.db.values()])
+    expect(stored).not.toContain('ghp_')
+    expect((w.db.get('session:session-1') as any).prompt).toBe('push with [redacted]')
+  })
+
+  test("the log keeps the engine's own model and effort, Jev's time and version, the rate limits and how the turn went", async ($, on) => {
+    const w = world(on, {
+      reply: { ...STRONG, model: 'jev-1.13.0' },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 23.5 }],
+      gate: () => w.clock.sleep(300),
+    })
+    await start($)
+    const done = turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-5-5', 'claude-sonnet-5-5'], effort: 'medium' })
+    await w.clock.settle()
+    await w.clock.advance(300)
+    await done
+    const entry = [...w.db].find(([k]) => k.startsWith('log:'))?.[1] as any
+    expect(entry.engine).toEqual({ model: 'claude-sonnet-5-5', effort: 'medium' })
+    expect(entry.jevMs).toBe(300)
+    expect(entry.jev.version).toBe('jev-1.13.0')
+    expect(entry.limits).toEqual({ five_hour: 23.5 })
+    expect(entry.outcome).toEqual({ reason: 'answer', steps: 2, stop: 'end_turn', input: 2, output: 2, cacheRead: 0, cacheWrite: 0 })
+  })
+
+  for (const mode of ['shadow', 'auto']) {
+    test(`a turn interrupted in its first request still gets its outcome (${mode})`, { options: { default_mode: mode } }, async ($, on) => {
+      let release = () => {}
+      const held = new Promise<void>(resolve => {
+        release = resolve
+      })
+      const w = world(on, { reply: STRONG, stepHold: () => held })
+      await start($)
+      await $.prompt.submit({ text: 'redesign the sync engine', wait: false, origin: { kind: 'sdk' } })
+      await $.turn.start({ text: 'redesign the sync engine', turnId: 't1' })
+      const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-sonnet-5-5', messageCount: 2, effort: 'high' })
+      await stream.next()
+      await w.clock.settle()
+      await stream.return(undefined as any) // the person interrupts mid-reply
+      await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
+      release()
+      await w.clock.settle()
+      const entry = [...w.db].find(([k]) => k.startsWith('log:'))?.[1] as any
+      expect(entry.outcome).toEqual({ reason: 'aborted', steps: 0, stop: null, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+    })
+  }
+
+  test('a Claude Code that cannot report its rate limits still gets the decision', { options: { default_mode: 'auto' } }, async ($, on) => {
+    const w = world(on, { reply: STRONG, noUsage: true })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
+    const entry = [...w.db].find(([k]) => k.startsWith('log:'))?.[1] as any
+    expect(entry.limits).toBeUndefined()
+  })
+
   test("the log keeps a prompt's first 200 chars and its full length", async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)

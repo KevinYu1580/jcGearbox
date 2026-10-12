@@ -1,6 +1,6 @@
-import type { EngineInterface, PluginOptions, Register } from 'claude-code'
+import type { EngineInterface, PluginOptions, Register, TurnStepResult } from 'claude-code'
 
-import { JEV_URL, buildRequest, clip, parseAnswers } from './jev.ts'
+import { JEV_URL, buildRequest, clip, parseAnswers, redact } from './jev.ts'
 import type { JevRequest, JevResult } from './jev.ts'
 import { newestCatalogFile, resolveModel, surfaceOf, versionAtLeast } from './models.ts'
 import type { Resolved } from './models.ts'
@@ -15,6 +15,8 @@ const FORK_REPLY_CHARS = 200 // a reply at least this long names the one session
 // Remote Control, or Slack. Anything else (a task notification, a schedule,
 // another session) continues the session as it is and never reaches Jev.
 const USER_ORIGINS = new Set(['composer', 'sdk', 'bridge', 'slack-ping'])
+// claude -p and the Agent SDKs: scripts, whose prompts are no task to judge.
+const SDK_ENTRYPOINTS = ['sdk-cli', 'sdk-ts', 'sdk-py']
 const USAGE = 'Usage: /jcmr [status | auto | shadow | off | on | pin <model> | log [n]], or /jcmr-<that>'
 // The engine puts this before a Slack message's text by the time its turn starts.
 const NON_USER_FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -35,7 +37,14 @@ type Decision = {
   pick?: string // Jev's own pick as model·effort, which the status line and the log show beside `sent`
   why?: string[] // why it differs from Jev's pick (shadow, pin, /model, effort pinned), and ultracode
   served?: string // the model the API answered as, when it was not the one sent
+  engine?: { model: string; effort: string | number | null } // the engine's own model and effort for the turn
+  jevMs?: number // how long Jev took, a retry included
+  limits?: Record<string, number> // the account's rate-limit windows: percent used, by kind
+  outcome?: Tally & { reason: string } // how the turn went, once it ended
 }
+
+type Tally = { steps: number; stop: string | null; input: number; output: number; cacheRead: number; cacheWrite: number }
+const NO_REQUESTS: Tally = { steps: 0, stop: null, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
 // One per session id, in $.store, so a resumed session keeps its choice.
 type SessionRecord = {
@@ -65,6 +74,8 @@ type Turn = {
   ownEffort?: boolean // the engine's effort changed mid-turn (a skill's own): it rides the rest of the turn
   plan?: Plan
   unanswered?: string // the model the last rewritten request named, when it got no response
+  decided?: Promise<Plan | undefined> // the turn's decision, written down once Jev answers
+  tally?: Tally // the turn's requests so far
 }
 type Tiers = Partial<Record<Tier, Resolved>>
 
@@ -117,7 +128,12 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     const { version, base } = await $.session.version()
-    ctx.disabled = versionAtLeast(base ?? version, MIN_VERSION) ? undefined : `jcmr: needs Claude Code ${MIN_VERSION}+`
+    const entrypoint = (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? ''
+    ctx.disabled = !versionAtLeast(base ?? version, MIN_VERSION)
+      ? `jcmr: needs Claude Code ${MIN_VERSION}+`
+      : SDK_ENTRYPOINTS.includes(entrypoint)
+        ? 'jcmr: off in claude -p and SDK runs'
+        : undefined
     await $.command.register({
       name: 'jcmr',
       description: 'Jev model router: status, mode, pin, log',
@@ -180,18 +196,24 @@ export const register: Register = (on, options) => {
       turn = { isUser: false, text: '' }
       turns.set(e.turnId, turn)
     }
+    let deciding: Promise<Plan | undefined> | undefined
     if (!turn.plan) {
       turn.baseModel = e.model
       turn.baseEffort = e.effort
-      turn.plan = { apply: false } // a plan that fails leaves the turn as it is, asked once
-      turn.plan = await plan($, ctx, e.model, e.effort, turn, next.signal)
+      // The request goes as soon as its plan is known, which may be before
+      // Jev answers; a plan that fails leaves the turn as it is, asked once.
+      let early!: (p: Plan) => void
+      const known = new Promise<Plan>(resolve => (early = resolve))
+      deciding = plan($, ctx, e.model, e.effort, turn, next.signal, early).catch(() => undefined)
+      turn.decided = deciding
+      turn.plan = await Promise.race([known, deciding.then(p => p ?? { apply: false })])
     } else if (e.model !== turn.baseModel) {
-      return yield* next(e) // the engine fell back to another model: leave it
+      return tally(turn, yield* next(e)) // the engine fell back to another model: leave it
     } else if (e.effort !== turn.baseEffort) {
       turn.ownEffort = true
     }
 
-    const { apply, model, logKey } = turn.plan
+    const { apply, model } = turn.plan
     const effort = turn.ownEffort ? undefined : turn.plan.effort
     const rewritesModel = apply && model !== undefined && movesTo(model, e.model)
     const result =
@@ -202,9 +224,11 @@ export const register: Register = (on, options) => {
             ...(rewritesModel ? { model } : {}),
             ...(apply && effort ? { effort } : {}),
           })
-    if (logKey) {
-      turn.plan = { ...turn.plan, logKey: undefined } // the first request answers for the turn
-      if (result.usage) await servedAs($, ctx, logKey, rewritesModel ? model : e.model, result.usage.model)
+    tally(turn, result)
+    if (deciding) {
+      // The decision the first request answers for, written down by now.
+      const logKey = (await deciding)?.logKey
+      if (logKey && result.usage) await servedAs($, ctx, logKey, rewritesModel ? model : e.model, result.usage.model)
     }
     if (rewritesModel && result.usage && !sameModel(result.usage.model, model)) {
       turn.plan = { ...turn.plan, model: undefined }
@@ -235,6 +259,10 @@ export const register: Register = (on, options) => {
       if (turn?.unanswered && e.reason === 'error' && !ctx.answered.delete(turn.unanswered)) {
         await drop($, ctx, turn.unanswered, 'no response')
       }
+      // Also for a turn interrupted mid-request, whose step went no further.
+      const logKey = (await turn?.decided)?.logKey
+      const d = logKey ? ((await $.store.get(logKey)) as Decision | undefined) : undefined
+      if (logKey && d) await $.store.set(logKey, { ...d, outcome: { reason: e.reason, ...(turn?.tally ?? NO_REQUESTS) } })
       if (e.answer && !ctx.disabled) {
         const [id, r] = await record($)
         if ((r.mode ?? opt.defaultMode) !== 'off' && (await apiKey($, opt))) {
@@ -245,7 +273,7 @@ export const register: Register = (on, options) => {
           }
           if (opt.sendAssistantTail) {
             await change($, ctx, latest => {
-              latest.replyTail = e.answer.slice(-opt.tailChars)
+              latest.replyTail = redact(e.answer).slice(-opt.tailChars)
             })
           }
         }
@@ -263,6 +291,7 @@ export const register: Register = (on, options) => {
     ctx.engineModels.set(await $.session.id(), e.to_model)
     const byPerson = e.source === 'command' || e.source === 'picker' || e.source === 'sdk'
     if (byPerson && e.from_model !== e.to_model) {
+      await joinedRecord($, ctx) // a resumed or forked conversation was decided before this
       await change($, ctx, r => {
         if (!r.decided) return false
         r.userModel = true
@@ -270,6 +299,33 @@ export const register: Register = (on, options) => {
       })
     }
     return next(e)
+  })
+
+  // /model naming the model in use, or /effort naming a level, is the
+  // person's choice, which no switch reports. A switch to another model reports
+  // itself; a word that only shows something, the picker or a name that is no
+  // model or level is no choice.
+  on('command.run', { command: ['model', 'effort'] }, async ($, e, next) => {
+    const result = await next(e)
+    const arg = e.args.trim()
+    if (!arg || ctx.disabled) return result
+    const [id] = await joinedRecord($, ctx)
+    const bare = (model: string) => model.replace(/\[\w+\]$/, '')
+    const engine = ctx.engineModels.get(id)
+    const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
+    const chosen =
+      e.command === 'effort' ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg) : !!named && !!engine && bare(named.id) === bare(engine)
+    if (chosen) {
+      await change($, ctx, r => {
+        if (!r.decided) return false
+        if (e.command === 'effort') r.effortPinned = true
+        else {
+          r.userModel = true
+          delete r.pin
+        }
+      })
+    }
+    return result
   })
 
   on('command.run', { command: 'jcmr' }, ($, e) => {
@@ -384,7 +440,15 @@ async function resolution($: EngineInterface, ctx: Ctx, session: string) {
   return ctx.resolved
 }
 
-async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effort | number | undefined, turn: Turn, signal: AbortSignal) {
+async function plan(
+  $: EngineInterface,
+  ctx: Ctx,
+  model: string,
+  rawEffort: Effort | number | undefined,
+  turn: Turn,
+  signal: AbortSignal,
+  early: (request: Plan) => void,
+): Promise<Plan> {
   const { opt } = ctx
   const [id, joined] = await joinedRecord($, ctx)
   const mode = joined.mode ?? opt.defaultMode
@@ -398,10 +462,18 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
     return { apply: false }
   }
 
-  const { tiers } = await resolution($, ctx, id)
+  const { tiers, firstParty } = await resolution($, ctx, id)
   const first = !joined.decided
+  // Shadow sends every request as it is; after the first turn the model is
+  // set, so a pinned effort, or a model that takes none, leaves Jev nothing
+  // to change. The request goes ahead and the answer is written down after.
+  if (mode === 'shadow') early({ apply: false })
+  else if (turn.isUser && !first && !turn.command && (joined.effortPinned || !takesEffort(current(joined) ?? model))) {
+    early({ apply: true, model: current(joined) })
+  }
   const offered = TIERS.filter(t => tiers[t])
   let asked: { result?: JevResult; error?: string } | undefined
+  let jevMs: number | undefined
   if (turn.isUser) {
     const distinct = new Set(offered.map(t => tiers[t]?.id)).size
     const body = buildRequest({
@@ -414,7 +486,15 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
       // A Bedrock ARN names the AWS account: what follows it is enough.
       previous: first ? undefined : { model: (current(joined) ?? model).replace(/^arn:[^/]*\//, ''), effort: lastEffort(joined) },
     })
+    const started = await $.clock.now()
     asked = await askJev($, key, body, signal, opt.jevTimeoutMs)
+    // The first turn picks the session's model: a quick network error or 5xx
+    // is asked again while a second is left.
+    const left = opt.jevTimeoutMs - ((await $.clock.now()) - started)
+    if (first && /^(network error|HTTP 5\d\d)$/.test(asked.error ?? '') && left > 1000 && !signal.aborted) {
+      asked = await askJev($, key, body, signal, left)
+    }
+    jevMs = (await $.clock.now()) - started
     if (signal.aborted) return { apply: false } // interrupted: nothing decided, the next prompt asks again
   }
 
@@ -464,22 +544,33 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
         r.model = pickModel({
           probabilities: asked.result?.tierProbabilities,
           models: ids,
-          minProbability: opt.tierMinProbability,
+          engine: engineTiers(turn.command ? (own ?? model) : model, tiers), // a command's own model is not the session's
+          upgrade: opt.tierUpgradeProbability,
+          downgrade: opt.tierMinProbability,
         })
       }
       if (decided.effort) r.effort = decided.effort
-      r.prompt = clip(turn.text, CONTEXT_CHARS)
+      r.prompt = clip(redact(turn.text), CONTEXT_CHARS)
       delete r.replyTail // the reply to this prompt, if it shows one, takes its place
+      let limits: Record<string, number> = {}
+      try {
+        limits = Object.fromEntries((await $.session.usage()).rateLimits.map(l => [l.kind, l.percentUsed]))
+      } catch {
+        // a Claude Code that cannot tell leaves them out
+      }
       r.last = {
         at: await $.clock.now(),
         mode,
         first,
-        prompt: turn.text.slice(0, 200),
+        prompt: redact(turn.text).slice(0, 200),
         promptLength: turn.text.length,
         jev: asked.result ?? null,
         ...(error ? { error } : {}),
         ...(r.model ? { model: r.model } : {}),
         ...(decided.effort ? { effort: decided.effort } : {}),
+        engine: { model, effort: raw },
+        ...(jevMs !== undefined ? { jevMs } : {}),
+        ...(Object.keys(limits).length > 0 ? { limits } : {}),
       }
     }
 
@@ -525,7 +616,8 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
     if (r.pin || r.userModel) notes.push('model pinned')
     if (r.effortPinned) notes.push('effort pinned')
     const atCeiling = isEffort(before) && EFFORTS.indexOf(before) >= EFFORTS.indexOf(opt.maxEffort)
-    if (escalated && atCeiling && !/opus|fable/.test(shown)) notes.push('try /jcmr pin opus')
+    // Only where a pin changes the request and the alias resolves.
+    if (auto && firstParty && escalated && (atCeiling || !takesEffort(shown)) && !/opus|fable/.test(shown)) notes.push('try /jcmr-pin opus')
     if (Object.values(tiers).some(t => t?.source === 'builtin')) notes.push('built-in model table')
     if (asked?.error) notes.push(`Jev ${asked.error}`)
     const head = mode === 'auto' ? 'jcmr' : `jcmr(${mode})`
@@ -533,6 +625,17 @@ async function plan($: EngineInterface, ctx: Ctx, model: string, rawEffort: Effo
 
     return { apply: auto, model: chosen, effort, logKey }
   })
+}
+
+// The tiers the engine's model is: those naming it, else the one its family
+// stands for in Anthropic's matrix; none for an id that names no family.
+function engineTiers(model: string, tiers: Tiers): Tier[] {
+  const id = model.replace(/\[\w+\]$/, '')
+  const named = TIERS.filter(t => tiers[t]?.id.replace(/\[\w+\]$/, '') === id)
+  if (named.length > 0) return named
+  const family = [['haiku', 'low'], ['sonnet', 'balanced'], ['opus', 'strong'], ['fable', 'long'], ['mythos', 'long']] as const
+  const tier = family.find(([name]) => id.includes(name))?.[1]
+  return tier ? [tier] : []
 }
 
 // The model the session runs on: a pin, else the first turn's choice unless
@@ -606,6 +709,18 @@ async function servedAs($: EngineInterface, ctx: Ctx, logKey: string, sent: stri
 }
 
 const takesEffort = (model: string) => defaultEffort(model) !== undefined
+
+// Counts a request toward its turn's log entry.
+function tally(turn: Turn, result: TurnStepResult): TurnStepResult {
+  const t = (turn.tally ??= { ...NO_REQUESTS })
+  t.steps++
+  t.stop = result.stopReason
+  t.input += result.usage?.input_tokens ?? 0
+  t.output += result.usage?.output_tokens ?? 0
+  t.cacheRead += result.usage?.cache_read_input_tokens ?? 0
+  t.cacheWrite += result.usage?.cache_creation_input_tokens ?? 0
+  return result
+}
 
 // Claude Code's own test for a typed keyword: not in a slash command, not
 // inside quotes or brackets, not part of a path, a flag or a question about it.
@@ -740,7 +855,8 @@ function readOptions(options: PluginOptions) {
       strong: text('strong_model'),
       long: text('long_model'),
     } as Record<Tier, string | undefined>,
-    tierMinProbability: num('tier_min_probability'),
+    tierMinProbability: num('tier_min_probability'), // to move to a weaker model
+    tierUpgradeProbability: num('tier_upgrade_probability'),
     signalThreshold: num('signal_threshold'),
     continuationThreshold: num('continuation_threshold'),
     minEffort: (text('min_effort') ?? 'low') as Effort,
