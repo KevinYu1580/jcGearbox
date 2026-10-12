@@ -42,8 +42,8 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 | `long` | Agent sessions that run for hours, deep research | `fable` (costs the most; `off` disables it) |
 
 - The model changes only if the winner gets at least 0.6 (`tier_min_probability`); otherwise you stay on your model.
-- The choice holds for the whole session, to keep the prompt cache. A new session, `/clear` or a fork decides again.
-- If the API refuses a model (no access, not served), the mod stops asking for it in that session.
+- The choice holds for the whole session, to keep the prompt cache. A new session or `/clear` decides again. A resumed or forked conversation doesn't: a fork takes over the choice of the session it came from when it can tell which one that was, and otherwise keeps the model it has.
+- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session.
 
 ### How the model changes in a session
 
@@ -62,7 +62,7 @@ flowchart LR
     C -->|"/jcmr-pin X"| X["Switch to X"]
     C -->|"/model to another model"| U["Switch to that model;<br/>the mod stops switching"]
     C -->|"/jcmr-auto"| A["Pin and /model cleared,<br/>back to the first<br/>prompt's pick"]
-    C -->|"API doesn't serve<br/>the chosen model"| S["Back to your model,<br/>automatically"]
+    C -->|"The chosen model isn't<br/>served or declines"| S["Back to your model,<br/>automatically"]
 ```
 
 The diagrams show `auto`. In shadow mode the same decision is only shown in the status line.
@@ -95,11 +95,11 @@ flowchart TD
 
 | Model | Takes | Default when none is sent |
 |---|---|---|
-| Opus 5.5 | `low`–`max` | `medium` |
+| Opus 5.5, Haiku 5.5 | `low`–`max` | `medium` |
 | Fable, Mythos, Opus 5/4.8/4.7, Sonnet 5.5/5 | `low`–`max` | `high` |
 | Opus 4.6, Sonnet 4.6, Mythos Preview | no `xhigh` (becomes `high`) | `high` |
 | Opus 4.5 | up to `high` | `high` |
-| Haiku and older models | no effort | — |
+| Haiku 4.5 and older models | no effort | — |
 | A model id the mod doesn't know | every level | `high` |
 
 Prompts you didn't type (notifications, scheduled prompts) and subagents are left alone. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode`. If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why.
@@ -155,13 +155,13 @@ Set them with `/jcmr-setup`, `/plugin configure jev-cc-model-router@jev-cc-model
 | `send_assistant_tail` | off (recommended on) | Also send the end of Claude's last reply |
 | `assistant_tail_chars` | 1000 | How much of it (100–8000; ~700 tokens per 1000) |
 
-Aliases resolve only with an Anthropic login. On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids. Haiku takes no effort and has a 200K context, and a session that picks it stays on it until you pin another model.
+Aliases resolve only with an Anthropic login. On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids. A session that picks Haiku stays on it until you pin another model.
 
 ## Privacy
 
 For each prompt you type, TypeSafe receives: the prompt (up to ~6000 characters), your previous prompt (up to ~1000), the session's current model and effort, and, with `send_assistant_tail` on, the end of Claude's last reply. Nothing else: no files, code or tool results unless they are in that text. TypeSafe's [privacy policy](https://typesafe.ai/legal/privacy-policy) says it does not train on this data but doesn't say how long it keeps it; servers are in the US.
 
-Locally, the mod keeps the first 200 characters of each prompt in its decision log (latest 200), and each session's last prompt and reply tail (latest 200 sessions).
+Locally, the mod keeps the first 200 characters of each prompt in its decision log (latest 200), each session's last prompt and reply tail (latest 200 sessions), and a hash of the end of Claude's longer replies, to tell which session a fork came from (latest 200).
 
 ## License
 

@@ -42,8 +42,8 @@ session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因
 | `long` | 持續數小時的 agent session、深度研究 | `fable`（最貴；填 `off` 停用） |
 
 - 勝出的機率要有 0.6（`tier_min_probability`）才會換 model，否則維持你選的 model。
-- 選擇會維持整個 session，避免 prompt cache 失效。新 session、`/clear` 或 fork 會重新選。
-- API 拒絕某個 model（沒有權限、沒有提供）時，這個 session 不會再要求它。
+- 選擇會維持整個 session，避免 prompt cache 失效。新 session 或 `/clear` 會重新選；接續或 fork 的對話不會：fork 認得出來源 session 時沿用它的選擇，否則維持原本的 model。
+- API 不讓用某個 model（沒有權限、沒有提供），或 model 拒答時，這個 session 不會再要求它。
 
 ### 一個 session 裡 model 怎麼變
 
@@ -62,7 +62,7 @@ flowchart LR
     C -->|"/jcmr-pin X"| X["改用 X"]
     C -->|"/model 換成別的 model"| U["改用那個 model，<br/>mod 不再換"]
     C -->|"/jcmr-auto"| A["清掉 pin 和 /model，<br/>回到第一個 prompt 選的"]
-    C -->|"API 不提供<br/>選中的 model"| S["自動退回你選的 model"]
+    C -->|"選中的 model<br/>無法使用或拒答"| S["自動退回你選的 model"]
 ```
 
 圖畫的是 `auto` 模式；shadow 模式判斷方式相同，但只顯示在狀態列。
@@ -95,11 +95,11 @@ flowchart TD
 
 | model | 能用 | 沒送 effort 時 |
 |---|---|---|
-| Opus 5.5 | `low`–`max` | `medium` |
+| Opus 5.5、Haiku 5.5 | `low`–`max` | `medium` |
 | Fable、Mythos、Opus 5/4.8/4.7、Sonnet 5.5/5 | `low`–`max` | `high` |
 | Opus 4.6、Sonnet 4.6、Mythos Preview | 沒有 `xhigh`（改成 `high`） | `high` |
 | Opus 4.5 | 最高 `high` | `high` |
-| Haiku 和更舊的 model | 不支援 effort | — |
+| Haiku 4.5 和更舊的 model | 不支援 effort | — |
 | mod 不認得的 model ID | 全部等級 | `high` |
 
 不是你打的 prompt（通知、排程）和子代理都不處理。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort，並標示 `ultracode`。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。
@@ -155,13 +155,13 @@ jcmr(shadow) ▸ sonnet-5-5·high · jev opus-5-5·high   shadow：送出的，�
 | `send_assistant_tail` | 關（建議開） | 一併送出 Claude 上一則回答的結尾 |
 | `assistant_tail_chars` | 1000 | 送多少字（100–8000；每 1000 字約 700 tokens） |
 
-別名只在用 Anthropic 帳號登入時有效。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。Haiku 不支援 effort、context 只有 200K，session 一旦選到它，會停在 Haiku 直到你 pin 別的 model。
+別名只在用 Anthropic 帳號登入時有效。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
 
 ## 隱私
 
 每個你送出的 prompt，TypeSafe 只會收到：這次的 prompt（最多約 6000 字）、上一個 prompt（最多約 1000 字）、session 目前的 model 和 effort，以及開啟 `send_assistant_tail` 時 Claude 上一則回答的結尾。檔案、程式碼和工具結果都不送，除非它們就在這些文字裡。TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不拿這些資料訓練，但沒寫明保留多久；伺服器在美國。
 
-本機只保留：每個 prompt 的前 200 字（決策紀錄，最近 200 筆），以及每個 session 的上一個 prompt 和回答結尾（最近 200 個 session）。
+本機只保留：每個 prompt 的前 200 字（決策紀錄，最近 200 筆），每個 session 的上一個 prompt 和回答結尾（最近 200 個 session），以及 Claude 較長回答結尾的雜湊，用來認出 fork 來自哪個 session（最近 200 筆）。
 
 ## 授權
 
