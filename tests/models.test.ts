@@ -72,6 +72,10 @@ describe('resolveModel', () => {
     expect(resolveModel('fable', firstParty)).toEqual({ id: 'claude-fable-5-1', source: 'builtin' })
   })
 
+  test('the built-in table names the current Haiku', () => {
+    expect(resolveModel('haiku', { firstParty: true, version: '2.1.296' })).toEqual({ id: 'claude-haiku-5-5', source: 'builtin' })
+  })
+
   test('an alias means nothing off a first-party login', () => {
     expect(resolveModel('sonnet', { firstParty: false, catalog, version: '2.1.286' })).toBeUndefined()
   })

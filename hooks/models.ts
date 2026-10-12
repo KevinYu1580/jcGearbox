@@ -8,7 +8,7 @@ export type Family = (typeof FAMILIES)[number]
 
 // Used when Claude Code's catalog cannot be read. Update on new releases.
 export const BUILTIN: Record<Family, string> = {
-  haiku: 'claude-haiku-4-5-20251001',
+  haiku: 'claude-haiku-5-5',
   sonnet: 'claude-sonnet-5-5',
   opus: 'claude-opus-5-5',
   fable: 'claude-fable-5-1',
