@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="jcGearbox: Right model. Right effort. Every prompt." width="100%">
+</p>
+
 # jcGearbox
 
 English · [繁體中文](README.zh-TW.md)

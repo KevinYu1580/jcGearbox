@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="jcGearbox: right model, right effort, every prompt">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1a1226"/><stop offset="1" stop-color="#0d0b14"/></linearGradient>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb26b"/><stop offset="1" stop-color="#d97757"/></linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
+  <g transform="translate(70,0)">
+    <path d="M229.0,137.5 L249.6,141.1 L249.6,158.9 L229.0,162.5 L224.7,178.7 L240.7,192.1 L231.8,207.5 L212.2,200.3 L200.3,212.2 L207.5,231.8 L192.1,240.7 L178.7,224.7 L162.5,229.0 L158.9,249.6 L141.1,249.6 L137.5,229.0 L121.3,224.7 L107.9,240.7 L92.5,231.8 L99.7,212.2 L87.8,200.3 L68.2,207.5 L59.3,192.1 L75.3,178.7 L71.0,162.5 L50.4,158.9 L50.4,141.1 L71.0,137.5 L75.3,121.3 L59.3,107.9 L68.2,92.5 L87.8,99.7 L99.7,87.8 L92.5,68.2 L107.9,59.3 L121.3,75.3 L137.5,71.0 L141.1,50.4 L158.9,50.4 L162.5,71.0 L178.7,75.3 L192.1,59.3 L207.5,68.2 L200.3,87.8 L212.2,99.7 L231.8,92.5 L240.7,107.9 L224.7,121.3Z" fill="url(#ac)"/>
+    <circle cx="150" cy="150" r="58" fill="#1a1226"/>
+    <g stroke="#f4e9dc" stroke-width="5" stroke-linecap="round" fill="none" opacity=".9">
+      <path d="M124,126 V174 M150,126 V174 M176,126 V174 M124,150 H176"/>
+    </g>
+  </g>
+  <text x="330" y="150" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="92" font-weight="700" fill="#f4e9dc" letter-spacing="-2">jc<tspan fill="url(#ac)">Gearbox</tspan></text>
+  <text x="334" y="205" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="32" fill="#b9aec4">Right model. Right effort. Every prompt.</text>
+  <text x="334" y="250" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#8c8199">Claude Code mod · auto-picks model &amp; effort</text>
+</svg>
