@@ -1,6 +1,6 @@
 ---
 name: jcGearbox-setup
-description: Set up the jcGearbox plugin step by step - API key, mode, sending Claude's reply to Jev, and a check that it runs. Use when the person runs /jcGearbox-setup or asks to set up, configure or install jcGearbox / jcGearbox.
+description: Set up the jcGearbox plugin step by step - API key, mode, sending Claude's reply to Jev, and a check that it runs. Use when the person runs /jcGearbox-setup or asks to set up, configure or install jcGearbox.
 ---
 
 # Set up jcGearbox
