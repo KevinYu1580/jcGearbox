@@ -234,9 +234,9 @@ export const commandText = (name: string, args: string) =>
   `<command-message>${name}</command-message>\n<command-name>/${name}</command-name>\n<command-args>${args}</command-args>`
 
 export const command = ($: any, args: string) =>
-  $.command.run({ command: 'jcmr', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+  $.command.run({ command: 'jcGearbox', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
 
-// One of the /jcmr-<action> commands.
+// One of the /jcGearbox-<action> commands.
 export const run = ($: any, name: string, args = '') =>
   $.command.run({ command: name, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
 

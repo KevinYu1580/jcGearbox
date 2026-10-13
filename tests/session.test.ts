@@ -253,7 +253,7 @@ describe('a conversation that goes on under a new id', () => {
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
   })
 
-  test("a fork's /jcmr-auto before its first prompt clears the pin it carries over", AUTO, async ($, on) => {
+  test("a fork's /jcGearbox-auto before its first prompt clears the pin it carries over", AUTO, async ($, on) => {
     const w = world(on, { reply: answers(STRONG, CONTINUE) })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
@@ -264,7 +264,7 @@ describe('a conversation that goes on under a new id', () => {
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
   })
 
-  test("a fork's own /jcmr-off before its first prompt wins over the mode it carries over", async ($, on) => {
+  test("a fork's own /jcGearbox-off before its first prompt wins over the mode it carries over", async ($, on) => {
     const w = world(on, { reply: answers(STRONG, CONTINUE) })
     await start($)
     await command($, 'auto')
@@ -352,16 +352,16 @@ describe('storage', () => {
     w.session = 'session-2'
     for (const [k, v] of Object.entries(records('log:', 201))) w.db.set(k, v)
     await $.classic.SessionStart({ source: 'clear' })
-    expect(w.status.at(-1)).toBe('jcmr')
+    expect(w.status.at(-1)).toBe('jcGearbox')
     expect(keys(w, 'log:')).toHaveLength(200)
   })
 })
 
 describe('status line', () => {
-  test('auto by default shows jcmr at start', AUTO, async ($, on) => {
+  test('auto by default shows jcGearbox at start', AUTO, async ($, on) => {
     const w = world(on)
     await start($)
-    expect(w.status).toEqual(['jcmr'])
+    expect(w.status).toEqual(['jcGearbox'])
   })
 
   test('a session turned off shows nothing at start, whatever the default', async ($, on) => {
@@ -373,22 +373,22 @@ describe('status line', () => {
   test("a session's own auto without a key says so at start, even when the default is off", { options: { default_mode: 'off' } }, async ($, on) => {
     const w = world(on, { noKey: true, store: { 'session:session-1': { mode: 'auto' } } })
     await start($)
-    expect(w.status).toEqual(['jcmr: no API key'])
+    expect(w.status).toEqual(['jcGearbox: no API key'])
   })
 
-  test('/jcmr off clears the status line', AUTO, async ($, on) => {
+  test('/jcGearbox off clears the status line', AUTO, async ($, on) => {
     const w = world(on)
     await start($)
     await command($, 'off')
-    expect(w.status).toEqual(['jcmr', undefined])
+    expect(w.status).toEqual(['jcGearbox', undefined])
   })
 
-  test('/jcmr auto after a shadow turn shows jcmr', async ($, on) => {
+  test('/jcGearbox auto after a shadow turn shows jcGearbox', async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect(w.status.at(-1)).toBe('jcmr(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ opus-5-5·high')
     await command($, 'auto')
-    expect(w.status.at(-1)).toBe('jcmr')
+    expect(w.status.at(-1)).toBe('jcGearbox')
   })
 })

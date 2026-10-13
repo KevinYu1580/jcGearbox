@@ -1,4 +1,4 @@
-# jev-cc-model-router
+# jcGearbox
 
 [English](README.md) · 繁體中文
 
@@ -8,7 +8,7 @@
 
 這是一個 Claude Code mod，依 [TypeSafe 的 Jev](https://typesafe.ai) 判斷的任務難度，替你選 model 和 effort。session 的第一個 prompt 決定 model，每個 prompt 決定 effort。tier 和等級依照 Anthropic 官方的 [model 選擇矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)和 [effort 等級](https://platform.claude.com/docs/zh-TW/build-with-claude/effort#effort-levels)設計。
 
-預設是 **shadow** 模式：只在狀態列顯示它的選擇，請求原樣送出。看 `/jcmr-log` 覺得可信後再切到 `auto`；Jev 判斷難度準不準，目前證據還很少。
+預設是 **shadow** 模式：只在狀態列顯示它的選擇，請求原樣送出。看 `/jcGearbox-log` 覺得可信後再切到 `auto`；Jev 判斷難度準不準，目前證據還很少。
 
 ## 需求
 
@@ -18,16 +18,16 @@
 ## 安裝
 
 ```
-/plugin marketplace add KevinYu1580/jev-cc-model-router
-/plugin install jev-cc-model-router@jev-cc-model-router
+/plugin marketplace add KevinYu1580/jcGearbox
+/plugin install jc-gearbox@jc-gearbox
 ```
 
-接著執行 **`/jcmr-setup`**，它會一步步帶你設好 key、模式和主要設定。沒有 key 時 mod 什麼都不做，狀態列顯示 `jcmr: no API key`。
+接著執行 **`/jcGearbox-setup`**，它會一步步帶你設好 key、模式和主要設定。沒有 key 時 mod 什麼都不做，狀態列顯示 `jcGearbox: no API key`。
 
 **建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 上一則回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多：「結果如下」要搭配 Claude 要你做什麼，才看得懂。
 
 ```bash
-echo '{"send_assistant_tail": "true"}' | claude plugin configure jev-cc-model-router@jev-cc-model-router --values-stdin
+echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-gearbox --values-stdin
 ```
 
 ## 怎麼選 model
@@ -60,9 +60,9 @@ flowchart TD
 ```mermaid
 flowchart LR
     C["第一個 prompt 之後<br/>只有這些會換 model"]
-    C -->|"/jcmr-pin X"| X["改用 X"]
+    C -->|"/jcGearbox-pin X"| X["改用 X"]
     C -->|"/model 換成別的 model"| U["改用那個 model，<br/>mod 不再換"]
-    C -->|"/jcmr-auto"| A["清掉 pin 和 /model，<br/>回到第一個 prompt 選的"]
+    C -->|"/jcGearbox-auto"| A["清掉 pin 和 /model，<br/>回到第一個 prompt 選的"]
     C -->|"選中的 model<br/>無法使用或拒答"| S["自動退回你選的 model"]
 ```
 
@@ -103,45 +103,45 @@ flowchart TD
 | Haiku 4.5 和更舊的 model | 不支援 effort | — |
 | mod 不認得的 model ID | 全部等級 | `high` |
 
-不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理、`claude -p` 和 Agent SDK 的執行一律不動（開啟 `fork_follows_route` 時，auto 模式下從主對話 fork 出去的子代理跟著 session 的 model；slash command 自帶 model 的那一回合 fork 出去的，維持 command 的 model）。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時，在 `/jcmr-log` 標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。只有 Jev 的答案能改變請求時，請求才會等它：shadow 從不等；第一個 prompt 之後，effort 由你決定或 model 不支援 effort 時也不等（slash command 仍會等）。這時只有比 Jev 還快回來的第一則回覆，會等它的答案，最多到逾時。
+不是你打的 prompt（通知、排程）不問 Jev，沿用 session 的 model 和上一回合的 effort；子代理、`claude -p` 和 Agent SDK 的執行一律不動（開啟 `fork_follows_route` 時，auto 模式下從主對話 fork 出去的子代理跟著 session 的 model；slash command 自帶 model 的那一回合 fork 出去的，維持 command 的 model）。slash command 或 skill 自己指定的 model 或 effort，在它那一回合照它的。**Ultracode** 不是 effort 等級，只是讓 Claude Code 能跑 workflow，所以照常選 model 和 effort；prompt 裡有這個關鍵字時，在 `/jcGearbox-log` 標示 `ultracode`（貼上的文字也算，也不檢查 workflow 有沒有開）。Jev 出錯或超過 `jev_timeout_seconds`（3 秒）沒回應時，這個 prompt 什麼都不改，狀態列會顯示原因。只有 Jev 的答案能改變請求時，請求才會等它：shadow 從不等；第一個 prompt 之後，effort 由你決定或 model 不支援 effort 時也不等（slash command 仍會等）。這時只有比 Jev 還快回來的第一則回覆，會等它的答案，最多到逾時。
 
 ## 手動覆寫
 
 | 你 | mod |
 |---|---|
-| `/jcmr-pin <model>` | 這個 session 改用該 model |
+| `/jcGearbox-pin <model>` | 這個 session 改用該 model |
 | 第一個 prompt 之後打 `/model <名稱>`（即使是目前的 model），或在選單換成別的 model | 這個 session 不再改 model |
 | 第一個 prompt 之後打 `/effort <等級>`（即使是目前的等級），或在選單換成別的 effort | 這個 session 不再改 effort |
-| `/jcmr-auto` | 清掉以上全部 |
+| `/jcGearbox-auto` | 清掉以上全部 |
 
-在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcmr-pin <model>`。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。
+在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcGearbox-pin <model>`。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。
 
 ## 指令
 
 | 指令 | 作用 |
 |---|---|
-| `/jcmr-setup` | 引導設定 |
-| `/jcmr-status`（或 `/jcmr`） | 模式、model、effort、各 tier 對應的 model、上一則的 Jev 分數與版本，以及上個請求實際送出的值 |
-| `/jcmr-auto`、`/jcmr-shadow`、`/jcmr-off` | 這個 session 的模式（`/jcmr-auto` 會一併清掉 pin） |
-| `/jcmr-on` | `/jcmr-off` 之後重新開啟，回到 `default_mode`（它是 `off` 時改開 `auto`）；pin 保留 |
-| `/jcmr-pin <model>` | 固定用某個別名或完整 model ID |
-| `/jcmr-log [n]` | 最近 `n` 筆決策（預設 20），包含所有 session |
-| `/jcmr-stats` | 紀錄中的決策和引擎原本的比：第一回合 model 升級、不變或降級，effort 調高、不變或調低，Jev 的錯誤率與延遲，抱怨比例 |
+| `/jcGearbox-setup` | 引導設定 |
+| `/jcGearbox-status`（或 `/jcGearbox`） | 模式、model、effort、各 tier 對應的 model、上一則的 Jev 分數與版本，以及上個請求實際送出的值 |
+| `/jcGearbox-auto`、`/jcGearbox-shadow`、`/jcGearbox-off` | 這個 session 的模式（`/jcGearbox-auto` 會一併清掉 pin） |
+| `/jcGearbox-on` | `/jcGearbox-off` 之後重新開啟，回到 `default_mode`（它是 `off` 時改開 `auto`）；pin 保留 |
+| `/jcGearbox-pin <model>` | 固定用某個別名或完整 model ID |
+| `/jcGearbox-log [n]` | 最近 `n` 筆決策（預設 20），包含所有 session |
+| `/jcGearbox-stats` | 紀錄中的決策和引擎原本的比：第一回合 model 升級、不變或降級，effort 調高、不變或調低，Jev 的錯誤率與延遲，抱怨比例 |
 
-舊寫法 `/jcmr <動作>` 仍可用。
+舊寫法 `/jcGearbox <動作>` 仍可用。
 
 ## 狀態列
 
 ```
-jcmr ▸ opus-5-5·high           auto：實際送出的
-jcmr(shadow) ▸ opus-5-5·high   shadow：Jev 的選擇
+jcGearbox ▸ opus-5-5·high           auto：實際送出的
+jcGearbox(shadow) ▸ opus-5-5·high   shadow：Jev 的選擇
 ```
 
-auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcmr-log`，完整狀態看 `/jcmr-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
+auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcGearbox-log`，完整狀態看 `/jcGearbox-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
 
 ## 設定
 
-用 `/jcmr-setup`、`/plugin configure jev-cc-model-router@jev-cc-model-router`，或 `claude plugin configure … --values-stdin`（值要寫成字串）修改。在 `/config` 改的會立刻生效；其他方式改完執行 `/reload-plugins` 或開新 session。設定存在 `~/.claude/settings.json` 的 `pluginConfigs`；`api_key` 存在 Claude Code 的安全儲存區。
+用 `/jcGearbox-setup`、`/plugin configure jc-gearbox@jc-gearbox`，或 `claude plugin configure … --values-stdin`（值要寫成字串）修改。在 `/config` 改的會立刻生效；其他方式改完執行 `/reload-plugins` 或開新 session。設定存在 `~/.claude/settings.json` 的 `pluginConfigs`；`api_key` 存在 Claude Code 的安全儲存區。
 
 | 設定 | 預設 | 說明 |
 |---|---|---|
@@ -159,13 +159,13 @@ auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的�
 | `assistant_tail_chars` | 1000 | 送多少字（100–8000；每 1000 字約 700 tokens） |
 | `fork_follows_route` | 關 | auto 模式下，從主對話 fork 出去的子代理也用 session 路由後的 model，讀得到對話的 prompt cache |
 
-別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，`/jcmr-status` 會標示 `built-in`。你的 model 清單沒有提供的別名（例如沒有 Fable 權限）會讓那個 tier 停用。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
+別名只在用 Anthropic 帳號或 API key 登入時有效；用 API key 時 Claude Code 沒有 model 清單，別名改用 mod 的內建對照表，`/jcGearbox-status` 會標示 `built-in`。你的 model 清單沒有提供的別名（例如沒有 Fable 權限）會讓那個 tier 停用。用 Bedrock、Vertex、Foundry 或 gateway 時，請至少替兩個 tier 填完整 model ID。session 一旦選到 Haiku，會停在 Haiku 直到你 pin 別的 model。
 
 ## 隱私
 
 每個你送出的 prompt（自己打的，或透過桌面 App、Remote Control、Slack 送出的；`claude -p` 和 Agent SDK 的執行不處理），TypeSafe 會收到：這次的 prompt（最多約 6000 字，太長就保留開頭和結尾）、上一個 prompt（最多約 1000 字）、從第二個 prompt 起 session 目前的 model 和上一回合的 effort（Bedrock ARN 會去掉帳號部分），以及開啟 `send_assistant_tail` 時 Claude 上一則回答的結尾。不是你打的 prompt，內容一律不送；但開啟 `send_assistant_tail` 時，Claude 對它的回答結尾可能送出。檔案、程式碼和工具結果只有在這些文字裡時才會送出。常見的 key 與 token 格式（API key、GitHub、AWS、Slack、Google 的 key、JWT、私鑰）在送出或存檔前會換成 `[redacted]`；其他你貼上的 secret 仍會原樣送出。Claude 引用的網頁或檔案內容，可能經由回答結尾送到 Jev、影響它的判斷。TypeSafe 的[隱私權政策](https://typesafe.ai/legal/privacy-policy)表示不拿這些資料訓練，但沒寫明保留多久；伺服器在美國，只有 enterprise 方案提供 zero retention。mod 只向 Claude Code 確認你是否用 Anthropic 帳號登入，用來判斷別名能不能用，不會碰到憑證本身。
 
-本機（`~/.claude/plugins/store/jev-cc-model-router_*.json`）保留：每個 prompt 的前 200 字（決策紀錄，最近 200 筆），每個 session 的上一個 prompt（最多約 1000 字）和回答結尾（最近 200 個 session；該 session 的下一個 prompt 會換掉它，關掉選項時則是刪掉），以及 Claude 較長回答結尾的雜湊，用來認出 fork 來自哪個 session（最近 200 筆）。每筆決策另外記下引擎原本的 model 和 effort、Jev 花了多久、這個回合的請求數與 token 數，以及額度用量。刪掉這個檔就會清空。
+本機（`~/.claude/plugins/store/jc-gearbox_*.json`）保留：每個 prompt 的前 200 字（決策紀錄，最近 200 筆），每個 session 的上一個 prompt（最多約 1000 字）和回答結尾（最近 200 個 session；該 session 的下一個 prompt 會換掉它，關掉選項時則是刪掉），以及 Claude 較長回答結尾的雜湊，用來認出 fork 來自哪個 session（最近 200 筆）。每筆決策另外記下引擎原本的 model 和 effort、Jev 花了多久、這個回合的請求數與 token 數，以及額度用量。刪掉這個檔就會清空。
 
 ## 授權
 

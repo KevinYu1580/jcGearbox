@@ -76,7 +76,7 @@ describe('model switches', () => {
     await run($, 'effort', 'high')
     await turn($, 'redesign the sync engine', 't1', { effort: 'medium' })
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·high')
   })
 
   test('a switch to the model already in use is ignored', AUTO, async ($, on) => {
@@ -108,7 +108,7 @@ describe('model switches', () => {
   })
 })
 
-describe('/jcmr auto', () => {
+describe('/jcGearbox auto', () => {
   test('clears a model switch and an effort pin', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
@@ -158,11 +158,11 @@ describe('the effort baseline', () => {
     await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5')
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'], effort: 'xhigh' })
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).toBe('jcmr ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·high')
   })
 })
 
-describe('/jcmr pin', () => {
+describe('/jcGearbox pin', () => {
   test('refuses a model the API did not answer as', AUTO, async ($, on) => {
     world(on, { reply: STRONG, answeredAs: 'claude-sonnet-5-5' })
     await start($)
@@ -176,7 +176,7 @@ describe('third-party login', () => {
   test('an alias cannot be pinned', AUTO, async ($, on) => {
     world(on, { thirdParty: true })
     await start($)
-    expect((await command($, 'pin opus')).text).toBe('jcmr: cannot resolve "opus" here; give a full model id.')
+    expect((await command($, 'pin opus')).text).toBe('jcGearbox: cannot resolve "opus" here; give a full model id.')
   })
 
   test('a full model id pins', AUTO, async ($, on) => {
@@ -243,7 +243,7 @@ describe('a complaint', () => {
   })
 })
 
-describe('/jcmr log', () => {
+describe('/jcGearbox log', () => {
   test('n lists the latest n decisions', async ($, on) => {
     world(on, { reply: firstStrongThenContinue })
     await start($)
@@ -281,7 +281,7 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: STRONG, noResponseFrom: 'claude-opus-5-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { reason: 'error' })
-    expect(w.status.at(-1)).toBe('jcmr: opus-5-5 was not used (no response); not switching to it again')
+    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (no response); not switching to it again')
     await turn($, 'ok', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
   })
@@ -299,7 +299,7 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: firstStrongThenContinue, refusalFrom: 'claude-opus-5-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { reason: 'refusal' })
-    expect(w.status.at(-1)).toBe('jcmr: opus-5-5 was not used (refused); not switching to it again')
+    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (refused); not switching to it again')
     await turn($, 'ok', 't2')
     expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
   })
@@ -342,7 +342,7 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: STRONG, answeredAs: 'claude-opus-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect(w.status.at(-1)).toBe('jcmr: opus-5-5 was not used (opus-5 answered); not switching to it again')
+    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (opus-5 answered); not switching to it again')
   })
 
   test("the model under Vertex's dated id is not blamed for answering under its API id", { options: { default_mode: 'auto', strong_model: 'claude-opus-5-5@20261001' } }, async ($, on) => {
@@ -397,23 +397,23 @@ describe('tiers that all resolve to one model', () => {
   })
 })
 
-describe('the /jcmr-<action> commands', () => {
-  test('are registered next to /jcmr', async ($, on) => {
+describe('the /jcGearbox-<action> commands', () => {
+  test('are registered next to /jcGearbox', async ($, on) => {
     const w = world(on)
     await start($)
-    expect(w.registered).toEqual(['jcmr', 'jcmr-status', 'jcmr-auto', 'jcmr-shadow', 'jcmr-off', 'jcmr-on', 'jcmr-pin', 'jcmr-log', 'jcmr-stats'])
+    expect(w.registered).toEqual(['jcGearbox', 'jcGearbox-status', 'jcGearbox-auto', 'jcGearbox-shadow', 'jcGearbox-off', 'jcGearbox-on', 'jcGearbox-pin', 'jcGearbox-log', 'jcGearbox-stats'])
   })
 
-  test('do what /jcmr <action> does', AUTO, async ($, on) => {
+  test('do what /jcGearbox <action> does', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect((await run($, 'jcmr-status')).text).toBe((await command($, '')).text)
-    expect((await run($, 'jcmr-pin', 'sonnet')).text).toContain('model pinned to claude-sonnet-5-5')
+    expect((await run($, 'jcGearbox-status')).text).toBe((await command($, '')).text)
+    expect((await run($, 'jcGearbox-pin', 'sonnet')).text).toContain('model pinned to claude-sonnet-5-5')
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
-    expect((await run($, 'jcmr-log', '1')).text.split('\n')).toHaveLength(3)
-    expect((await run($, 'jcmr-off')).text).toBe('jcmr: off for this session.')
+    expect((await run($, 'jcGearbox-log', '1')).text.split('\n')).toHaveLength(3)
+    expect((await run($, 'jcGearbox-off')).text).toBe('jcGearbox: off for this session.')
     await turn($, 'one more', 't3')
     expect(w.asked).toHaveLength(2)
   })
@@ -424,30 +424,30 @@ describe('the /jcmr-<action> commands', () => {
     for (const name of w.registered) expect((await run($, name)).text).toBeDefined()
   })
 
-  test('/jcmr-on keeps a pin', AUTO, async ($, on) => {
+  test('/jcGearbox-on keeps a pin', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    await run($, 'jcmr-pin', 'sonnet')
-    await run($, 'jcmr-off')
-    expect((await run($, 'jcmr-on')).text).toBe('jcmr: auto for this session.')
+    await run($, 'jcGearbox-pin', 'sonnet')
+    await run($, 'jcGearbox-off')
+    expect((await run($, 'jcGearbox-on')).text).toBe('jcGearbox: auto for this session.')
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
-    expect((await command($, '')).text).toContain('jcmr: auto (default)')
+    expect((await command($, '')).text).toContain('jcGearbox: auto (default)')
   })
 
-  test('/jcmr-on goes back to the default mode', async ($, on) => {
+  test('/jcGearbox-on goes back to the default mode', async ($, on) => {
     world(on, { reply: STRONG })
     await start($)
-    await run($, 'jcmr-off')
-    expect((await run($, 'jcmr-on')).text).toBe('jcmr: shadow for this session.')
-    expect((await command($, 'on')).text).toBe('jcmr: shadow for this session.')
+    await run($, 'jcGearbox-off')
+    expect((await run($, 'jcGearbox-on')).text).toBe('jcGearbox: shadow for this session.')
+    expect((await command($, 'on')).text).toBe('jcGearbox: shadow for this session.')
   })
 
-  test('/jcmr-on turns auto on when the default mode is off', { options: { default_mode: 'off' } }, async ($, on) => {
+  test('/jcGearbox-on turns auto on when the default mode is off', { options: { default_mode: 'off' } }, async ($, on) => {
     world(on, { reply: STRONG })
     await start($)
-    expect((await run($, 'jcmr-on')).text).toBe('jcmr: auto for this session.')
+    expect((await run($, 'jcGearbox-on')).text).toBe('jcGearbox: auto for this session.')
   })
 })
 

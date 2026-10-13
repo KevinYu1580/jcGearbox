@@ -17,7 +17,7 @@ const FORK_REPLY_CHARS = 200 // a reply at least this long names the one session
 const USER_ORIGINS = new Set(['composer', 'sdk', 'bridge', 'slack-ping'])
 // claude -p and the Agent SDKs: scripts, whose prompts are no task to judge.
 const SDK_ENTRYPOINTS = ['sdk-cli', 'sdk-ts', 'sdk-py']
-const USAGE = 'Usage: /jcmr [status | auto | shadow | off | on | pin <model> | log [n] | stats], or /jcmr-<that>'
+const USAGE = 'Usage: /jcGearbox [status | auto | shadow | off | on | pin <model> | log [n] | stats], or /jcGearbox-<that>'
 // The engine puts this before a Slack message's text by the time its turn starts.
 const NON_USER_FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
 
@@ -55,8 +55,8 @@ type SessionRecord = {
   rawModel?: string // the engine's model at that turn
   prompt?: string // the last user prompt, for the next turn's context
   replyTail?: string // the end of Claude's last reply (send_assistant_tail)
-  mode?: Mode // set by /jcmr for this session
-  pin?: string // set by /jcmr pin
+  mode?: Mode // set by /jcGearbox for this session
+  pin?: string // set by /jcGearbox pin
   userModel?: boolean // the person switched model (/model or the picker)
   effortPinned?: boolean // the person changed the effort
   badModels?: string[] // models the API did not answer as
@@ -132,25 +132,25 @@ export const register: Register = (on, options) => {
     const { version, base } = await $.session.version()
     const entrypoint = (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? ''
     ctx.disabled = !versionAtLeast(base ?? version, MIN_VERSION)
-      ? `jcmr: needs Claude Code ${MIN_VERSION}+`
+      ? `jcGearbox: needs Claude Code ${MIN_VERSION}+`
       : SDK_ENTRYPOINTS.includes(entrypoint)
-        ? 'jcmr: off in claude -p and SDK runs'
+        ? 'jcGearbox: off in claude -p and SDK runs'
         : undefined
     await $.command.register({
-      name: 'jcmr',
+      name: 'jcGearbox',
       description: 'Jev model router: status, mode, pin, log, stats',
       argumentHint: '[status | auto | shadow | off | on | pin <model> | log [n] | stats]',
     })
-    // One command per action, so the typeahead lists them all; /jcmr <action> still works.
+    // One command per action, so the typeahead lists them all; /jcGearbox <action> still works.
     const d = 'Jev model router:'
-    await $.command.register({ name: 'jcmr-status', description: `${d} this session's mode, model, effort and last request` })
-    await $.command.register({ name: 'jcmr-auto', description: `${d} route model and effort in this session; clears pins` })
-    await $.command.register({ name: 'jcmr-shadow', description: `${d} judge and show, but send requests unchanged, in this session` })
-    await $.command.register({ name: 'jcmr-off', description: `${d} turn it off for this session` })
-    await $.command.register({ name: 'jcmr-on', description: `${d} turn it back on for this session (default mode, or auto)` })
-    await $.command.register({ name: 'jcmr-pin', description: `${d} use one model for this session`, argumentHint: '<alias or model id>' })
-    await $.command.register({ name: 'jcmr-log', description: `${d} recent decisions, across sessions`, argumentHint: '[n]' })
-    await $.command.register({ name: 'jcmr-stats', description: `${d} how the logged decisions compare with the engine's own` })
+    await $.command.register({ name: 'jcGearbox-status', description: `${d} this session's mode, model, effort and last request` })
+    await $.command.register({ name: 'jcGearbox-auto', description: `${d} route model and effort in this session; clears pins` })
+    await $.command.register({ name: 'jcGearbox-shadow', description: `${d} judge and show, but send requests unchanged, in this session` })
+    await $.command.register({ name: 'jcGearbox-off', description: `${d} turn it off for this session` })
+    await $.command.register({ name: 'jcGearbox-on', description: `${d} turn it back on for this session (default mode, or auto)` })
+    await $.command.register({ name: 'jcGearbox-pin', description: `${d} use one model for this session`, argumentHint: '<alias or model id>' })
+    await $.command.register({ name: 'jcGearbox-log', description: `${d} recent decisions, across sessions`, argumentHint: '[n]' })
+    await $.command.register({ name: 'jcGearbox-stats', description: `${d} how the logged decisions compare with the engine's own` })
     await prune($)
     await showMode($, ctx)
     return next(e)
@@ -349,21 +349,21 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  on('command.run', { command: 'jcmr' }, ($, e) => {
+  on('command.run', { command: 'jcGearbox' }, ($, e) => {
     const [sub = '', arg] = e.args.trim().split(/\s+/)
-    return jcmr($, ctx, sub, arg)
+    return jcGearbox($, ctx, sub, arg)
   })
-  on('command.run', { command: 'jcmr-status' }, $ => jcmr($, ctx, 'status', undefined))
-  on('command.run', { command: 'jcmr-auto' }, $ => jcmr($, ctx, 'auto', undefined))
-  on('command.run', { command: 'jcmr-shadow' }, $ => jcmr($, ctx, 'shadow', undefined))
-  on('command.run', { command: 'jcmr-off' }, $ => jcmr($, ctx, 'off', undefined))
-  on('command.run', { command: 'jcmr-on' }, $ => jcmr($, ctx, 'on', undefined))
-  on('command.run', { command: 'jcmr-pin' }, ($, e) => jcmr($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
-  on('command.run', { command: 'jcmr-log' }, ($, e) => jcmr($, ctx, 'log', e.args.trim().split(/\s+/)[0] || undefined))
-  on('command.run', { command: 'jcmr-stats' }, $ => jcmr($, ctx, 'stats', undefined))
+  on('command.run', { command: 'jcGearbox-status' }, $ => jcGearbox($, ctx, 'status', undefined))
+  on('command.run', { command: 'jcGearbox-auto' }, $ => jcGearbox($, ctx, 'auto', undefined))
+  on('command.run', { command: 'jcGearbox-shadow' }, $ => jcGearbox($, ctx, 'shadow', undefined))
+  on('command.run', { command: 'jcGearbox-off' }, $ => jcGearbox($, ctx, 'off', undefined))
+  on('command.run', { command: 'jcGearbox-on' }, $ => jcGearbox($, ctx, 'on', undefined))
+  on('command.run', { command: 'jcGearbox-pin' }, ($, e) => jcGearbox($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
+  on('command.run', { command: 'jcGearbox-log' }, ($, e) => jcGearbox($, ctx, 'log', e.args.trim().split(/\s+/)[0] || undefined))
+  on('command.run', { command: 'jcGearbox-stats' }, $ => jcGearbox($, ctx, 'stats', undefined))
 }
 
-async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | undefined) {
+async function jcGearbox($: EngineInterface, ctx: Ctx, sub: string, arg: string | undefined) {
   const { opt } = ctx
   if (sub === 'log') {
     const n = Number.parseInt(arg ?? '', 10)
@@ -376,14 +376,14 @@ async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | und
     return { text: report(r, opt, tiers) }
   }
   // Back on drops the session's own mode (auto when the default is off) and
-  // keeps any pin: it undoes /jcmr-off, not /model or /jcmr-pin.
+  // keeps any pin: it undoes /jcGearbox-off, not /model or /jcGearbox-pin.
   if (sub === 'on') {
     const latest = await change($, ctx, r => {
       if (opt.defaultMode === 'off') r.mode = 'auto'
       else delete r.mode
     })
     await showMode($, ctx)
-    return { text: `jcmr: ${latest.mode ?? opt.defaultMode} for this session.` }
+    return { text: `jcGearbox: ${latest.mode ?? opt.defaultMode} for this session.` }
   }
   if (sub === 'auto' || sub === 'shadow' || sub === 'off') {
     await change($, ctx, r => {
@@ -396,19 +396,19 @@ async function jcmr($: EngineInterface, ctx: Ctx, sub: string, arg: string | und
       }
     })
     await showMode($, ctx)
-    return { text: sub === 'auto' ? 'jcmr: auto for this session; pins cleared.' : `jcmr: ${sub} for this session.` }
+    return { text: sub === 'auto' ? 'jcGearbox: auto for this session; pins cleared.' : `jcGearbox: ${sub} for this session.` }
   }
   if (sub === 'pin' && arg) {
     const pinned = resolveModel(arg, await resolution($, ctx, id))
-    if (!pinned) return { text: `jcmr: cannot resolve "${arg}" here; give a full model id.` }
+    if (!pinned) return { text: `jcGearbox: cannot resolve "${arg}" here; give a full model id.` }
     if (r.badModels?.includes(pinned.id)) {
-      return { text: `jcmr: ${pinned.id} was not used when asked for earlier in this session; not pinning it.` }
+      return { text: `jcGearbox: ${pinned.id} was not used when asked for earlier in this session; not pinning it.` }
     }
     await change($, ctx, r => {
       r.pin = pinned.id
       delete r.userModel
     })
-    return { text: `jcmr: model pinned to ${pinned.id} for this session (/jcmr-auto clears it).` }
+    return { text: `jcGearbox: model pinned to ${pinned.id} for this session (/jcGearbox-auto clears it).` }
   }
   return { text: USAGE }
 }
@@ -481,7 +481,7 @@ async function plan(
   }
   const key = await apiKey($, opt)
   if (!key) {
-    $.ui.status('jcmr: no API key')
+    $.ui.status('jcGearbox: no API key')
     return { apply: false }
   }
 
@@ -521,7 +521,7 @@ async function plan(
     if (signal.aborted) return { apply: false } // interrupted: nothing decided, the next prompt asks again
   }
 
-  // Read again, to keep what /model or /jcmr changed while Jev answered.
+  // Read again, to keep what /model or /jcGearbox changed while Jev answered.
   return serial(ctx, async (): Promise<Plan> => {
     const [, r] = await record($)
 
@@ -635,9 +635,9 @@ async function plan(
     await save($, id, r)
 
     // Only the model and effort: in auto what was sent, in shadow Jev's pick
-    // (what was sent is the session's own). The why is in /jcmr-log; a Jev
+    // (what was sent is the session's own). The why is in /jcGearbox-log; a Jev
     // error is said, or an unjudged prompt would look judged.
-    const head = auto ? 'jcmr' : `jcmr(${mode})`
+    const head = auto ? 'jcGearbox' : `jcGearbox(${mode})`
     $.ui.status(`${head} ▸ ${auto ? sentLabel(sent) : pick}${asked?.error ? ` · Jev ${asked.error}` : ''}`)
 
     return { apply: auto, model: chosen, effort, logKey }
@@ -712,11 +712,11 @@ async function drop($: EngineInterface, ctx: Ctx, model: string, answered: strin
   await change($, ctx, r => {
     r.badModels = [...(r.badModels ?? []), model]
   })
-  $.ui.status(`jcmr: ${label(model)} was not used (${answered}); not switching to it again`)
+  $.ui.status(`jcGearbox: ${label(model)} was not used (${answered}); not switching to it again`)
 }
 
 // The API answered as another model than the one the request named: say so
-// in that turn's log line and in /jcmr.
+// in that turn's log line and in /jcGearbox.
 async function servedAs($: EngineInterface, ctx: Ctx, logKey: string, sent: string, answered: string) {
   if (sameModel(answered, sent)) return
   const d = (await $.store.get(logKey)) as (Decision & { session: string }) | undefined
@@ -791,7 +791,7 @@ async function showMode($: EngineInterface, ctx: Ctx) {
   const [, r] = await record($)
   const mode = r.mode ?? ctx.opt.defaultMode
   const key = await apiKey($, ctx.opt)
-  $.ui.status(ctx.disabled ?? (mode === 'off' ? undefined : !key ? 'jcmr: no API key' : mode === 'auto' ? 'jcmr' : `jcmr(${mode})`))
+  $.ui.status(ctx.disabled ?? (mode === 'off' ? undefined : !key ? 'jcGearbox: no API key' : mode === 'auto' ? 'jcGearbox' : `jcGearbox(${mode})`))
 }
 
 const pct = (p: number) => p.toFixed(2)
@@ -812,7 +812,7 @@ function report(r: SessionRecord, opt: Options, tiers: Tiers | undefined): strin
           ? `${r.model} (chosen on the first turn${dropped(r.model)})`
           : "the session's own (no clear pick)"
   const lines = [
-    `jcmr: ${r.mode ?? defaultMode} (${r.mode ? 'this session' : 'default'})`,
+    `jcGearbox: ${r.mode ?? defaultMode} (${r.mode ? 'this session' : 'default'})`,
     `model: ${model}`,
     `effort: ${r.effortPinned ? 'yours (you changed it)' : (r.effort ?? 'not set yet')}`,
   ]
@@ -858,7 +858,7 @@ async function logText($: EngineInterface, n: number): Promise<string> {
     lines.push(`${when}  ${d.mode.padEnd(6)} ${shown}${other}${notesOf(d)}${flags}  ${JSON.stringify(d.prompt.slice(0, 60))}`)
   }
   // The prompts as typed, escaped and fenced, so none of them reads as markdown.
-  return lines.length > 0 ? ['```', ...lines, '```'].join('\n') : 'jcmr: no decisions logged yet.'
+  return lines.length > 0 ? ['```', ...lines, '```'].join('\n') : 'jcGearbox: no decisions logged yet.'
 }
 
 // How the logged decisions Jev answered compare with what the engine would
@@ -870,7 +870,7 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
     const d = (await $.store.get(key)) as (Decision & { session?: string }) | undefined
     if (d) ds.push(d)
   }
-  if (ds.length === 0) return 'jcmr: no decisions logged yet.'
+  if (ds.length === 0) return 'jcGearbox: no decisions logged yet.'
   const engine = (d: Decision) => d.engine ?? (d.mode === 'auto' ? undefined : d.sent)
   const pct = (n: number, of: number) => `${Math.round((n / of) * 100)}%`
   const day = (at: number) => {
@@ -909,7 +909,7 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
   const complaints = later.filter(d => (d.jev?.signals.escalate ?? 0) > opt.signalThreshold).length
   const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0)
   return [
-    `jcmr stats: the last ${ds.length} decisions, ${new Set(ds.map(d => d.session)).size} sessions, ${day(Math.min(...ats))} to ${day(Math.max(...ats))}`,
+    `jcGearbox stats: the last ${ds.length} decisions, ${new Set(ds.map(d => d.session)).size} sessions, ${day(Math.min(...ats))} to ${day(Math.max(...ats))}`,
     `first-turn model, Jev's vs the engine's (${sum(models)}): up ${models.up} · same ${models.same} · down ${models.down}`,
     `effort, the router's vs the engine's (${sum(efforts)}): higher ${efforts.higher} · same ${efforts.same} · lower ${efforts.lower}`,
     `Jev: ${errors} error${errors === 1 ? '' : 's'} of ${ds.length} (${pct(errors, ds.length)})${unsure > 0 ? ` · unsure of the effort ${unsure}` : ''}${timing}`,

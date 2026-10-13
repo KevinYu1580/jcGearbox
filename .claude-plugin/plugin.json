@@ -1,12 +1,12 @@
 {
-  "name": "jev-cc-model-router",
-  "version": "1.3.0",
+  "name": "jc-gearbox",
+  "version": "2.0.0",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
   "author": {
     "name": "KevinYu1580"
   },
-  "homepage": "https://github.com/KevinYu1580/jev-cc-model-router",
-  "repository": "https://github.com/KevinYu1580/jev-cc-model-router",
+  "homepage": "https://github.com/KevinYu1580/jcGearbox",
+  "repository": "https://github.com/KevinYu1580/jcGearbox",
   "license": "MIT",
   "userConfig": {
     "api_key": {
@@ -18,7 +18,7 @@
     "default_mode": {
       "type": "string",
       "title": "Default mode",
-      "description": "shadow: judge and show, never rewrite. auto: rewrite model and effort. off: do nothing. /jcmr changes the current session only.",
+      "description": "shadow: judge and show, never rewrite. auto: rewrite model and effort. off: do nothing. /jcGearbox changes the current session only.",
       "options": [
         "shadow",
         "auto",

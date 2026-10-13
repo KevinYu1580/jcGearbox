@@ -1,14 +1,14 @@
 {
-  "name": "jev-cc-model-router",
+  "name": "jc-gearbox",
   "owner": {
     "name": "KevinYu1580"
   },
   "metadata": {
-    "description": "jev-cc-model-router: a Claude Code mod that routes the model and effort with TypeSafe Jev."
+    "description": "jcGearbox: a Claude Code mod that routes the model and effort with TypeSafe Jev."
   },
   "plugins": [
     {
-      "name": "jev-cc-model-router",
+      "name": "jc-gearbox",
       "source": "./",
       "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is."
     }
