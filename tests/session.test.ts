@@ -352,7 +352,7 @@ describe('storage', () => {
     w.session = 'session-2'
     for (const [k, v] of Object.entries(records('log:', 201))) w.db.set(k, v)
     await $.classic.SessionStart({ source: 'clear' })
-    expect(w.status.at(-1)).toBe('jcGearbox')
+    expect(w.status.at(-1)).toBe('auto')
     expect(keys(w, 'log:')).toHaveLength(200)
   })
 })
@@ -361,7 +361,7 @@ describe('status line', () => {
   test('auto by default shows jcGearbox at start', AUTO, async ($, on) => {
     const w = world(on)
     await start($)
-    expect(w.status).toEqual(['jcGearbox'])
+    expect(w.status).toEqual(['auto'])
   })
 
   test('a session turned off shows nothing at start, whatever the default', async ($, on) => {
@@ -380,7 +380,7 @@ describe('status line', () => {
     const w = world(on)
     await start($)
     await command($, 'off')
-    expect(w.status).toEqual(['jcGearbox', undefined])
+    expect(w.status).toEqual(['auto', undefined])
   })
 
   test('/jcGearbox auto after a shadow turn shows jcGearbox', async ($, on) => {
@@ -389,6 +389,6 @@ describe('status line', () => {
     await turn($, 'redesign the sync engine', 't1')
     expect(w.status.at(-1)).toBe('shadow ▸ opus-5-5·high')
     await command($, 'auto')
-    expect(w.status.at(-1)).toBe('jcGearbox')
+    expect(w.status.at(-1)).toBe('auto')
   })
 })
