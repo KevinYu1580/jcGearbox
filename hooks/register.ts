@@ -108,7 +108,7 @@ type Ctx = {
   answered: Set<string> // models a rewritten request got an answer from, since their last turn died unanswered
   joined: Set<string> // sessions that resume or fork a conversation already under way
   baselined: Set<string> // sessions whose engine effort this process has seen
-  engineModels: Map<string, string> // each session's own model, as its last plain turn or switch left it
+  engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
   forks: Map<string, string | null> // each subagent seen: the model a fork of the main conversation started on, else null
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
@@ -136,6 +136,13 @@ export const register: Register = (on, options) => {
       : SDK_ENTRYPOINTS.includes(entrypoint)
         ? 'off in claude -p and SDK runs'
         : undefined
+    // The session's own model before any turn, so that a command's own model
+    // on the first one is told from it.
+    if (!ctx.disabled) {
+      const id = await $.session.id()
+      const own = await sessionModel($, ctx, id)
+      if (own) ctx.engineModels.set(id, own)
+    }
     await $.command.register({
       name: 'jcGearbox',
       description: 'Jev model router: status, mode, pin, log, stats',
@@ -160,6 +167,7 @@ export const register: Register = (on, options) => {
   // session.start.
   on('classic.SessionStart', async ($, e, next) => {
     // The id the session goes on under: $.session.id() can still be the one it leaves.
+    if (e.model) ctx.engineModels.set(e.session_id, e.model)
     if (e.source === 'resume' || e.source === 'fork') ctx.joined.add(e.session_id)
     if (e.source === 'clear' || e.source === 'resume' || e.source === 'fork') {
       await prune($)
@@ -202,7 +210,7 @@ export const register: Register = (on, options) => {
       if (!opt.forkFollowsRoute || ctx.disabled) return yield* next(e)
       if (!ctx.forks.has(e.agentId)) {
         const agent = (await $.agent.list()).find(a => a.id === e.agentId)
-        const own = ctx.engineModels.get(await $.session.id())
+        const own = await sessionModel($, ctx, await $.session.id())
         const routed = agent?.type === 'fork' && !agent.parentId && (own === undefined || sameModel(e.model, own))
         ctx.forks.set(e.agentId, routed ? e.model : null)
       }
@@ -332,7 +340,7 @@ export const register: Register = (on, options) => {
     if (!arg || ctx.disabled) return result
     const [id] = await joinedRecord($, ctx)
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
-    const engine = ctx.engineModels.get(id)
+    const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
     const chosen =
       e.command === 'effort' ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg) : !!named && !!engine && bare(named.id) === bare(engine)
@@ -535,7 +543,7 @@ async function plan(
     const raw = rawEffort ?? null
     const baseline = ctx.baselined.has(id) && r.rawEffort !== undefined && r.rawModel === model
     const changed = baseline && r.rawEffort !== raw
-    const own = ctx.engineModels.get(id)
+    const own = turn.command ? await sessionModel($, ctx, id) : undefined
     const ownModel = !!turn.command && own !== undefined && !sameModel(model, own)
     if (!turn.command) {
       ctx.engineModels.set(id, model)
@@ -663,6 +671,18 @@ function engineTiers(model: string, tiers: Tiers): Tier[] {
 function current(r: SessionRecord): string | undefined {
   const model = r.pin ?? (r.userModel ? undefined : r.model)
   return model && !r.badModels?.includes(model) ? model : undefined
+}
+
+// The session's own model: as its start, its last plain turn or a switch left
+// it, else as the engine reports it now.
+async function sessionModel($: EngineInterface, ctx: Ctx, id: string): Promise<string | undefined> {
+  const known = ctx.engineModels.get(id)
+  if (known) return known
+  try {
+    return await $.session.model()
+  } catch {
+    return undefined // a Claude Code that cannot tell
+  }
 }
 
 // The session's record. A resumed or forked conversation it has none of is

@@ -15,6 +15,7 @@ export type World = {
   listed: string[] // the directories the plugin listed
   registered: string[] // the slash commands the plugin registered
   session: string // what $.session.id() answers; a test may change it
+  model: string // what $.session.model() answers: the session's own model
   messages: { role: 'user' | 'assistant'; text: string; toolUses: [] }[] // what $.session.messages() answers
   clock: ReturnType<typeof mock.clock>
 }
@@ -41,6 +42,7 @@ export type WorldOptions = {
   storeHolds?: (key: string) => Promise<unknown> | undefined // a store.set of this key waits for the promise
   stepHold?: () => Promise<unknown> | undefined // a model request streams a chunk, then waits for the promise
   noUsage?: boolean // $.session.usage() fails, as on a Claude Code without it
+  model?: string // the session's own model, as $.session.model() answers it (default sonnet)
 }
 
 export const FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -68,6 +70,7 @@ export function world(on: On, o: WorldOptions = {}): World {
     listed: [],
     registered: [],
     session: 'session-1',
+    model: o.model ?? 'claude-sonnet-5-5',
     messages: [],
     clock: mock.clock(on),
   }
@@ -98,6 +101,7 @@ export function world(on: On, o: WorldOptions = {}): World {
   const catalog = o.catalog === undefined ? CATALOG : o.catalog
   const dir = `${env.CLAUDE_CONFIG_DIR ?? `${env.HOME}/.claude`}/cache/model-catalog`
   on('session.id', () => ({ value: w.session }))
+  on('session.model', () => ({ value: w.model }))
   on('session.messages', () => ({ value: w.messages }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.286', base: o.version ?? '2.1.286' } }))
   on('session.authorize', () => ({ value: o.thirdParty ? null : { handle: 'h', kind: 'bearer' as const } }))
