@@ -132,7 +132,7 @@ flowchart TD
 | `/jcGearbox-on` | `/jcGearbox-off` 之後重新開啟，回到 `default_mode`（它是 `off` 時改開 `auto`）；pin 保留 |
 | `/jcGearbox-pin <model>` | 固定用某個別名或完整 model ID |
 | `/jcGearbox-log [n]` | 最近 `n` 筆決策（預設 20），包含所有 session |
-| `/jcGearbox-stats` | 紀錄中的決策和引擎原本的比：第一回合 model 升級、不變或降級，effort 調高、不變或調低，Jev 的錯誤率與延遲，抱怨比例 |
+| `/jcGearbox-stats` | 紀錄中的決策和引擎原本的比：第一回合 model 升級、不變或降級，effort 調高、不變或調低，Jev 的錯誤率與延遲，抱怨比例；以及各回合的結果（回答、錯誤、中斷、拒答）、prompt 從快取讀到的比例（全部，以及和該 session 上一筆紀錄比，model 與 effort 都沒換、換了 effort、換了 model 時各自的比例），還有額度最近一次的用量與最高值 |
 
 舊寫法 `/jcGearbox <動作>` 仍可用。
 

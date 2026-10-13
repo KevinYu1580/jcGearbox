@@ -775,6 +775,29 @@ describe('/jcGearbox-stats', () => {
     expect((await command($, 'stats')).text).toBe((await run($, 'jcGearbox-stats')).text)
   })
 
+  test('says how the turns went, how much of the prompt the cache served, and how full the rate limits were', async ($, on) => {
+    const tally = (reason: string, input: number, cacheRead: number, cacheWrite: number) =>
+      ({ reason, steps: 1, stop: 'end_turn', input, output: 10, cacheRead, cacheWrite })
+    const entry = (n: number, session: string, sent: object, outcome: object, limits?: object) => ({
+      at: at(8) + n, mode: 'auto', first: n === 1, prompt: 'p', promptLength: 1, session, jev: null, error: 'timeout',
+      sent, outcome, ...(limits ? { limits } : {}),
+    })
+    world(on, {
+      store: {
+        'log:1:session-1:0': entry(1, 'session-1', { model: 'claude-opus-5-5', effort: 'high' }, tally('answer', 100, 0, 900), { five_hour: 20, seven_day: 5 }),
+        'log:2:session-1:1': entry(2, 'session-1', { model: 'claude-opus-5-5', effort: 'high' }, tally('answer', 50, 900, 50)),
+        'log:3:session-1:2': entry(3, 'session-1', { model: 'claude-opus-5-5', effort: 'low' }, tally('error', 1000, 0, 0), { five_hour: 60, seven_day: 10 }),
+        'log:4:session-2:3': entry(4, 'session-2', { model: 'claude-sonnet-5-5', effort: 'high' }, tally('aborted', 10, 90, 0), { five_hour: 40 }),
+      },
+    })
+    await start($)
+    expect((await run($, 'jcGearbox-stats')).text.split('\n').slice(5)).toEqual([
+      'turns: 2 answered · 1 error · 1 interrupted · 0 refused',
+      'cache reads, share of the prompt: all 32% (4) · same model and effort 90% (1) · new effort 0% (1)',
+      'rate limits, last (peak): five_hour 40% (60%) · seven_day 10% (10%)',
+    ])
+  })
+
   test('says so when nothing is logged yet', async ($, on) => {
     world(on)
     await start($)

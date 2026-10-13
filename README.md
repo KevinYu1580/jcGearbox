@@ -132,7 +132,7 @@ Picking the session's original model again in the picker isn't a switch to Claud
 | `/jcGearbox-on` | Back on after `/jcGearbox-off`, in `default_mode` (`auto` when that is `off`); pins stay |
 | `/jcGearbox-pin <model>` | Pin an alias or a full model id |
 | `/jcGearbox-log [n]` | Last `n` decisions (default 20), across sessions |
-| `/jcGearbox-stats` | How the logged decisions compare with what the engine would have run: first-turn model up, same or down, effort higher, same or lower, Jev's errors and latency, complaints |
+| `/jcGearbox-stats` | How the logged decisions compare with what the engine would have run: first-turn model up, same or down, effort higher, same or lower, Jev's errors and latency, complaints; and how the turns went (answered, errors, interrupted, refused), how much of the prompt the cache served (in all, and after the same model and effort, a new effort or a new model as the session's last logged turn), and the rate limits at the last reading and their peak |
 
 `/jcGearbox <action>` still works.
 

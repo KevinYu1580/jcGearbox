@@ -912,8 +912,8 @@ async function logText($: EngineInterface, n: number): Promise<string> {
 }
 
 // How the logged decisions Jev answered compare with what the engine would
-// have run: in shadow the sent request is the engine's own, in auto the log
-// keeps it.
+// have run (in shadow the sent request is the engine's own, in auto the log
+// keeps it), and how their turns went.
 async function statsText($: EngineInterface, opt: Options): Promise<string> {
   const ds: (Decision & { session?: string })[] = []
   for (const key of (await $.store.keys()).filter(k => k.startsWith('log:'))) {
@@ -958,6 +958,36 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
   const later = answered.filter(d => !d.first)
   const complaints = later.filter(d => (d.jev?.signals.escalate ?? 0) > opt.signalThreshold).length
   const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0)
+
+  // How the turns went, and how much of their prompt the cache served: a new
+  // model, or on most models a new effort, has a request read the whole
+  // conversation again. Each turn is set against the session's last logged one.
+  const ended = ds.flatMap(d => (d.outcome ? [d.outcome] : []))
+  const count = (reason: string) => ended.filter(o => o.reason === reason).length
+  const read = (ts: Tally[]) => {
+    const prompt = ts.reduce((n, t) => n + t.input + t.cacheRead + t.cacheWrite, 0)
+    return prompt > 0 ? `${pct(ts.reduce((n, t) => n + t.cacheRead, 0), prompt)} (${ts.length})` : undefined
+  }
+  const before = new Map<string | undefined, Decision>()
+  const after: Record<'same' | 'effort' | 'model', Tally[]> = { same: [], effort: [], model: [] }
+  for (const d of ds) {
+    const last = before.get(d.session)
+    before.set(d.session, d)
+    if (!d.outcome || !last?.sent || !d.sent) continue
+    after[last.sent.model !== d.sent.model ? 'model' : last.sent.effort !== d.sent.effort ? 'effort' : 'same'].push(d.outcome)
+  }
+  const cache = [
+    ['all', read(ended)],
+    ['same model and effort', read(after.same)],
+    ['new effort', read(after.effort)],
+    ['new model', read(after.model)],
+  ].flatMap(([name, share]) => (share ? [`${name} ${share}`] : []))
+  // The rate-limit windows as the last decision found them, and at their fullest.
+  const limits = new Map<string, { last: number; peak: number }>()
+  for (const d of ds) {
+    for (const [kind, used] of Object.entries(d.limits ?? {})) limits.set(kind, { last: used, peak: Math.max(used, limits.get(kind)?.peak ?? used) })
+  }
+
   return [
     `jcGearbox stats: the last ${ds.length} decisions, ${new Set(ds.map(d => d.session)).size} sessions, ${day(Math.min(...ats))} to ${day(Math.max(...ats))}`,
     `first-turn model, Jev's vs the engine's (${sum(models)}): up ${models.up} · same ${models.same} · down ${models.down}`,
@@ -966,6 +996,11 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
     later.length > 0
       ? `complaints: ${complaints} of ${later.length} later turns Jev answered (${pct(complaints, later.length)})`
       : 'complaints: no later turns Jev answered yet',
+    ...(ended.length > 0
+      ? [`turns: ${count('answer')} answered · ${count('error')} error${count('error') === 1 ? '' : 's'} · ${count('aborted')} interrupted · ${count('refusal')} refused`]
+      : []),
+    ...(cache.length > 0 ? [`cache reads, share of the prompt: ${cache.join(' · ')}`] : []),
+    ...(limits.size > 0 ? [`rate limits, last (peak): ${[...limits].map(([kind, l]) => `${kind} ${l.last}% (${l.peak}%)`).join(' · ')}`] : []),
   ].join('\n')
 }
 
