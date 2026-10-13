@@ -503,7 +503,6 @@ async function plan(
     return { apply: false }
   }
 
-  const { tiers } = await resolution($, ctx, id)
   const first = !joined.decided
   // Shadow sends every request as it is; after the first turn the model is
   // set, so a pinned effort, or a model that takes none, leaves Jev nothing
@@ -512,6 +511,7 @@ async function plan(
   else if (turn.isUser && !first && !turn.command && (joined.effortPinned || !takesEffort(current(joined) ?? model))) {
     early({ apply: true, model: current(joined) })
   }
+  const { tiers } = await resolution($, ctx, id)
   const offered = TIERS.filter(t => tiers[t])
   let asked: { result?: JevResult; error?: string } | undefined
   let jevMs: number | undefined
@@ -563,10 +563,10 @@ async function plan(
       ctx.baselined.add(id)
     }
 
+    let decided: ReturnType<typeof decideEffort> | undefined
     let unsure = false
     if (asked) {
-      const error = asked.error
-      const decided = decideEffort({
+      decided = decideEffort({
         signals: asked.result?.signals,
         // Before the router has decided an effort, the last turn ran at the engine's.
         previous: r.effort ?? (asked.result && isEffort(r.rawEffort) ? r.rawEffort : undefined),
@@ -594,26 +594,6 @@ async function plan(
       if (decided.effort) r.effort = decided.effort
       r.prompt = clip(redact(turn.text), CONTEXT_CHARS)
       delete r.replyTail // the reply to this prompt, if it shows one, takes its place
-      let limits: Record<string, number> = {}
-      try {
-        limits = Object.fromEntries((await $.session.usage()).rateLimits.map(l => [l.kind, l.percentUsed]))
-      } catch {
-        // a Claude Code that cannot tell leaves them out
-      }
-      r.last = {
-        at: await $.clock.now(),
-        mode,
-        first,
-        prompt: redact(turn.text).slice(0, 200),
-        promptLength: turn.text.length,
-        jev: asked.result ?? null,
-        ...(error ? { error } : {}),
-        ...(r.model ? { model: r.model } : {}),
-        ...(decided.effort ? { effort: decided.effort } : {}),
-        engine: { model, effort: raw },
-        ...(jevMs !== undefined ? { jevMs } : {}),
-        ...(Object.keys(limits).length > 0 ? { limits } : {}),
-      }
     }
 
     const chosen = ownModel ? undefined : current(r)
@@ -622,6 +602,8 @@ async function plan(
     // The ultracode keyword only lets Claude Code run workflows this turn; the
     // model and effort are routed as on any other turn.
     const auto = mode === 'auto'
+    // Decided: the request goes now, and the decision is written down after.
+    early({ apply: auto, model: chosen, effort })
     const sentModel = auto && chosen ? chosen : model
     // A model rewritten without an effort of ours runs at whatever effort the
     // engine works out for it, which the person's settings decide.
@@ -642,10 +624,31 @@ async function plan(
     const jevEffort = takesEffort(jevModel) ? (effortFor(jevModel, r.effort) ?? sent.effort ?? defaultEffort(sent.model) ?? '-') : '-'
     const pick = `${label(jevModel)}·${jevEffort}`
     let logKey: string | undefined
-    if (asked && r.last) {
-      r.last.sent = sent
-      r.last.pick = pick
-      if (why.length > 0) r.last.why = why
+    if (asked) {
+      let limits: Record<string, number> = {}
+      try {
+        limits = Object.fromEntries((await $.session.usage()).rateLimits.map(l => [l.kind, l.percentUsed]))
+      } catch {
+        // a Claude Code that cannot tell leaves them out
+      }
+      const error = asked.error
+      r.last = {
+        at: await $.clock.now(),
+        mode,
+        first,
+        prompt: redact(turn.text).slice(0, 200),
+        promptLength: turn.text.length,
+        jev: asked.result ?? null,
+        ...(error ? { error } : {}),
+        ...(r.model ? { model: r.model } : {}),
+        ...(decided?.effort ? { effort: decided.effort } : {}),
+        engine: { model, effort: raw },
+        ...(jevMs !== undefined ? { jevMs } : {}),
+        ...(Object.keys(limits).length > 0 ? { limits } : {}),
+        sent,
+        pick,
+        ...(why.length > 0 ? { why } : {}),
+      }
       logKey = `log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`
       await $.store.set(logKey, { ...r.last, session: id })
       await trim($, 'log:', KEEP)

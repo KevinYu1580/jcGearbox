@@ -460,6 +460,21 @@ describe('overrides', () => {
     expect((await command($, '')).text).toContain('effort: yours')
   })
 
+  test('auto sends a request once it is decided, before the decision is written down', AUTO, async ($, on) => {
+    let release = () => {}
+    const held = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const w = world(on, { reply: STRONG, storeHolds: key => (key.startsWith('log:') ? held : undefined) })
+    await start($)
+    const t1 = turn($, 'redesign the sync engine', 't1')
+    await w.clock.settle()
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
+    release()
+    await t1
+    expect([...w.db.keys()].some(k => k.startsWith('log:'))).toBe(true)
+  })
+
   test('the person changing the effort pins it', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)
