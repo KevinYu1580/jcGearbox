@@ -14,6 +14,14 @@ A Claude Code mod that picks the model and the effort for you, from how hard [Ty
 
 It starts in **shadow** mode: it shows its pick in the status line but sends your requests unchanged. Switch to `auto` once `/jcGearbox-log` has convinced you; the evidence that Jev judges difficulty well is thin.
 
+> [!IMPORTANT]
+> **A new model or effort costs the prompt cache.** Claude Code caches the conversation per model, and on most models per effort level too, so a change makes the next request read the whole conversation again, uncached ([Claude Code docs](https://code.claude.com/docs/en/prompt-caching)):
+>
+> - **Model**: every switch. That is why jcGearbox picks the model once per session. In `auto`, `/jcGearbox-pin`, `/jcGearbox-off`, `/jcGearbox-shadow` and `/model` mid-session are switches too.
+> - **Effort**: every change, except on Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 with an Anthropic API key or a Claude subscription. Amazon Bedrock, Google Cloud's Agent Platform (Vertex AI), the Claude apps gateway, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` and HIPAA organizations get no such exception, and neither do older models such as Opus 5 or 4.x.
+>
+> **So run jcGearbox on an Anthropic API key or a Claude subscription, with every tier on one of those four models** (`/jcGearbox-status` shows what each tier resolves to): there a new effort every prompt keeps the cache. Anywhere else, set `min_effort` and `max_effort` to the same level, so only the model is routed. `/jcGearbox-stats` shows how much of the prompt the cache served after a new effort and after none.
+
 ## Requirements
 
 - Claude Code 2.1.286 or newer. Mods are an early-access API, so a Claude Code release can break this one.

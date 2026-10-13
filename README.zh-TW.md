@@ -14,6 +14,14 @@
 
 預設是 **shadow** 模式：只在狀態列顯示它的選擇，請求原樣送出。看 `/jcGearbox-log` 覺得可信後再切到 `auto`；Jev 判斷難度準不準，目前證據還很少。
 
+> [!IMPORTANT]
+> **換 model 或 effort 會讓 prompt cache 失效。** Claude Code 的對話快取依 model 分開，多數 model 還依 effort 等級分開；一換，下一個請求就要把整段對話重新讀過，沒有快取（[Claude Code 文件](https://code.claude.com/docs/zh-TW/prompt-caching)）：
+>
+> - **model**：每次切換都會。所以 jcGearbox 每個 session 只選一次 model。`auto` 模式下，session 中途用 `/jcGearbox-pin`、`/jcGearbox-off`、`/jcGearbox-shadow` 或 `/model` 也算切換。
+> - **effort**：每次改都會，只有 Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1 搭配 Anthropic API key 或 Claude 訂閱時例外。Amazon Bedrock、Google Cloud 的 Agent Platform（Vertex AI）、Claude apps gateway、設了 `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`、HIPAA 組織都沒有這個例外，Opus 5、4.x 這類較舊的 model 也沒有。
+>
+> **因此建議用 Anthropic API key 或 Claude 訂閱，而且每個 tier 都落在這四個 model 上**（各 tier 實際對應哪個 model，看 `/jcGearbox-status`）：這樣每個 prompt 換 effort 也不會讓快取失效。其他環境請把 `min_effort` 和 `max_effort` 設成同一級，只讓 mod 選 model。`/jcGearbox-stats` 會列出換了 effort 和沒換時，prompt 從快取讀到的比例。
+
 ## 需求
 
 - Claude Code 2.1.286 以上。mod 是 early access API，Claude Code 改版可能讓它失效。
