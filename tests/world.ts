@@ -105,12 +105,15 @@ export function world(on: On, o: WorldOptions = {}): World {
   on('session.messages', () => ({ value: w.messages }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.286', base: o.version ?? '2.1.286' } }))
   on('session.authorize', () => ({ value: o.thirdParty ? null : { handle: 'h', kind: 'bearer' as const } }))
+  // On Windows the engine hands these hooks the path made absolute there
+  // (C:\home\u\...): it is compared as the POSIX path the plugin asked for.
+  const posix = (path: string) => path.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
   on('fs.list', ($, e) => {
-    w.listed.push(e.path)
-    const found = catalog && e.path === dir
+    w.listed.push(posix(e.path))
+    const found = catalog && posix(e.path) === dir
     return { value: found ? [{ name: 'org-x-ccd.json', kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false }] : [] }
   })
-  on('fs.read', ($, e) => ({ value: e.path === `${dir}/org-x-ccd.json` ? JSON.stringify(catalog) : '' }))
+  on('fs.read', ($, e) => ({ value: posix(e.path) === `${dir}/org-x-ccd.json` ? JSON.stringify(catalog) : '' }))
   on('ui.status', ($, e) => {
     w.status.push(e.text)
     return { value: undefined }
