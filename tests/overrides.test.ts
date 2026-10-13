@@ -76,7 +76,7 @@ describe('model switches', () => {
     await run($, 'effort', 'high')
     await turn($, 'redesign the sync engine', 't1', { effort: 'medium' })
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
   })
 
   test('a switch to the model already in use is ignored', AUTO, async ($, on) => {
@@ -158,7 +158,7 @@ describe('the effort baseline', () => {
     await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5')
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'], effort: 'xhigh' })
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
   })
 })
 
@@ -281,7 +281,7 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: STRONG, noResponseFrom: 'claude-opus-5-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { reason: 'error' })
-    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (no response); not switching to it again')
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (no response); not switching to it again')
     await turn($, 'ok', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
   })
@@ -299,7 +299,7 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: firstStrongThenContinue, refusalFrom: 'claude-opus-5-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { reason: 'refusal' })
-    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (refused); not switching to it again')
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (refused); not switching to it again')
     await turn($, 'ok', 't2')
     expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
   })
@@ -342,7 +342,7 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: STRONG, answeredAs: 'claude-opus-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (opus-5 answered); not switching to it again')
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (opus-5 answered); not switching to it again')
   })
 
   test("the model under Vertex's dated id is not blamed for answering under its API id", { options: { default_mode: 'auto', strong_model: 'claude-opus-5-5@20261001' } }, async ($, on) => {

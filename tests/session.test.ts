@@ -373,7 +373,7 @@ describe('status line', () => {
   test("a session's own auto without a key says so at start, even when the default is off", { options: { default_mode: 'off' } }, async ($, on) => {
     const w = world(on, { noKey: true, store: { 'session:session-1': { mode: 'auto' } } })
     await start($)
-    expect(w.status).toEqual(['jcGearbox: no API key'])
+    expect(w.status).toEqual(['no API key'])
   })
 
   test('/jcGearbox off clears the status line', AUTO, async ($, on) => {
@@ -387,7 +387,7 @@ describe('status line', () => {
     const w = world(on, { reply: STRONG })
     await start($)
     await turn($, 'redesign the sync engine', 't1')
-    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('shadow ▸ opus-5-5·high')
     await command($, 'auto')
     expect(w.status.at(-1)).toBe('jcGearbox')
   })
