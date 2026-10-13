@@ -155,6 +155,7 @@ export function world(on: On, o: WorldOptions = {}): World {
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('classic.PostModelSwitch', () => ({}))
+  on('classic.StopFailure', () => ({}))
   on('turn.step', async function* ($, e) {
     w.steps.push(e.effort === undefined ? { model: e.model } : { model: e.model, effort: e.effort })
     const silent =
@@ -211,6 +212,8 @@ export type TurnOptions = {
   submit?: boolean // false: the turn starts with no prompt.submit
   answer?: string // the turn's final answer
   reason?: string // why the turn ended (default 'answer'; 'error' when an API error ended it)
+  failure?: string // why an API error ended it, as StopFailure says (default 'unknown')
+  failureAfter?: boolean // StopFailure comes after turn.complete, not before
 }
 
 // The turn.start the next prompt.submit fires on its way down.
@@ -230,7 +233,11 @@ export async function turn($: any, text: string, turnId: string, o: TurnOptions 
     await drain($.turn.step({ turnId, index, model, messageCount: 2 + index, ...(effort ? { effort } : {}) }))
   }
   const reason = o.reason ?? 'answer'
+  // A turn an API error ended raises StopFailure too, in no set order.
+  const stopFailure = () => (reason === 'error' ? $.classic.StopFailure({ error: o.failure ?? 'unknown' }) : undefined)
+  if (!o.failureAfter) await stopFailure()
   await $.turn.complete({ answer: o.answer ?? 'done', durationMs: 5, isAborted: reason === 'aborted', turnId, reason })
+  if (o.failureAfter) await stopFailure()
 }
 
 // The text a slash command's turn starts from, as the engine builds it.

@@ -47,7 +47,7 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 
 - The model moves to a stronger tier's when Jev gives at least 0.5 (`tier_upgrade_probability`) that the task needs that tier or a stronger one, and to a weaker tier's only at 0.8 (`tier_min_probability`) that a weaker one will do; otherwise you stay on your model. A network error or 5xx from Jev on this prompt is retried once while a second is left.
 - The choice holds for the whole session, to keep the prompt cache. A new session or `/clear` decides again. A resumed or forked conversation doesn't: a fork takes over the choice of the session it came from when it can tell which one that was, and otherwise keeps the model it has.
-- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session.
+- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session. An overload or a server error, which Claude Code itself treats as transient, doesn't count.
 - Switching to Fable this way skips the confirmation Claude Code shows before a model billed to usage credits: on a plan that bills Fable to credits, they are spent without asking. Set `long_model` to `off` if you don't want that.
 
 ### How the model changes in a session

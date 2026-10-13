@@ -110,8 +110,14 @@ type Ctx = {
   baselined: Set<string> // sessions whose engine effort this process has seen
   engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
   forks: Map<string, string | null> // each subagent seen: the model a fork of the main conversation started on, else null
+  failure?: Failure // the main loop's turn that died of an API error, as far as its two reports are in
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
+
+// A turn that died of an API error: the model its rewritten request named and
+// got no response from (turn.complete), and why it died (StopFailure). The two
+// come in either order.
+type Failure = { model?: string; error?: string }
 
 export const register: Register = (on, options) => {
   const ctx: Ctx = {
@@ -185,6 +191,7 @@ export const register: Register = (on, options) => {
   // A turn is the person's when it starts from the text they submitted; a
   // slash command's turn starts from tags naming the command they typed.
   on('turn.start', ($, e, next) => {
+    ctx.failure = undefined // half a report of the last turn's failure is not this turn's
     const text = e.text.startsWith(NON_USER_FRAME) ? e.text.slice(NON_USER_FRAME.length) : e.text
     const command = /^\s*(?:<command-message>[^<]*<\/command-message>\s*)?<command-name>(\/[^<]*)<\/command-name>/.exec(text)?.[1]
     const i = submitted.findLastIndex(s => s.text === text || (command !== undefined && typedCommand(s.text, command)))
@@ -282,12 +289,9 @@ export const register: Register = (on, options) => {
       turns.delete(e.turnId)
       // A request with no response is the model's doing (an unknown id, no
       // access) only when the turn died of it: the engine retries others
-      // itself, a context overflow after compacting, say. A model that has
-      // answered since its last such turn is given one more: an overload or
-      // a 5xx passes; twice in a row is the model's doing.
-      if (turn?.unanswered && e.reason === 'error' && !ctx.answered.delete(turn.unanswered)) {
-        await drop($, ctx, turn.unanswered, 'no response')
-      }
+      // itself, a context overflow after compacting, say. Why it died comes
+      // with StopFailure, before or after this.
+      if (turn?.unanswered && e.reason === 'error') await failed($, ctx, { model: turn.unanswered })
       // Also for a turn interrupted mid-request, whose step went no further.
       const logKey = (await turn?.decided)?.logKey
       const d = logKey ? ((await $.store.get(logKey)) as Decision | undefined) : undefined
@@ -308,6 +312,12 @@ export const register: Register = (on, options) => {
         }
       }
     }
+    return next(e)
+  })
+
+  // Why a turn of the main loop died of an API error, in Claude Code's own words.
+  on('classic.StopFailure', async ($, e, next) => {
+    if (!e.agent_id) await failed($, ctx, { error: e.error })
     return next(e)
   })
 
@@ -733,6 +743,23 @@ async function drop($: EngineInterface, ctx: Ctx, model: string, answered: strin
     r.badModels = [...(r.badModels ?? []), model]
   })
   $.ui.status(`${label(model)} was not used (${answered}); not switching to it again`)
+}
+
+// The errors Claude Code itself takes for ones that may clear by themselves.
+const TRANSIENT = new Set(['overloaded', 'server_error'])
+
+// Blames the model a turn's rewritten request named once both reports of the
+// turn's failure are in. An overload or a server error says nothing of the
+// model; any other error is its doing, unless it has answered since its last
+// such turn, which is given one more.
+async function failed($: EngineInterface, ctx: Ctx, report: Failure) {
+  const { model, error } = { ...ctx.failure, ...report }
+  if (model === undefined || error === undefined) {
+    ctx.failure = { model, error }
+    return
+  }
+  ctx.failure = undefined
+  if (!TRANSIENT.has(error) && !ctx.answered.delete(model)) await drop($, ctx, model, 'no response')
 }
 
 // The API answered as another model than the one the request named: say so
