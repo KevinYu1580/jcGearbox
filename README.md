@@ -36,7 +36,7 @@ echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-g
 
 ## Picking the model
 
-On a session's first prompt, Jev picks a tier. Options are listed Opus first, as the matrix says most work starts there.
+On a session's first prompt, Jev picks a tier. Options are listed Opus first, as the [official matrix](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model#model-selection-matrix) says most work starts there.
 
 | Tier | For | Default |
 |---|---|---|
@@ -73,6 +73,8 @@ flowchart LR
 The diagrams show `auto`. In shadow mode the same decision is only shown in the status line.
 
 ## Picking the effort
+
+Levels follow Anthropic's [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort).
 
 For every prompt you type:
 

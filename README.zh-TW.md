@@ -36,7 +36,7 @@ echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-g
 
 ## 怎麼選 model
 
-session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因為官方矩陣說多數工作從它開始。
+session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因為[官方矩陣](https://platform.claude.com/docs/zh-TW/about-claude/models/choosing-a-model#model-selection-matrix)說多數工作從它開始。
 
 | Tier | 用途 | 預設 |
 |---|---|---|
@@ -73,6 +73,8 @@ flowchart LR
 圖畫的是 `auto` 模式；shadow 模式判斷方式相同，但只顯示在狀態列。
 
 ## 怎麼選 effort
+
+等級依照官方的 [effort 文件](https://platform.claude.com/docs/zh-TW/build-with-claude/effort)。
 
 每個你送出的 prompt：
 
