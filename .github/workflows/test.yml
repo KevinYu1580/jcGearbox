@@ -6,11 +6,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
+        # Windows too: the engine hands a plugin's fs hooks Windows paths there.
+        os: [ubuntu-latest, windows-latest]
         # The oldest Claude Code the mod supports (MIN_VERSION in hooks/register.ts), and the newest.
         claude-code: ['2.1.286', latest]
     env:
@@ -18,9 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Claude Code ${{ matrix.claude-code }}
+        if: runner.os != 'Windows'
         run: |
           curl -fsSL https://claude.ai/install.sh | bash -s ${{ matrix.claude-code }}
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install Claude Code ${{ matrix.claude-code }}
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ([scriptblock]::Create((irm https://claude.ai/install.ps1))) ${{ matrix.claude-code }}
+          "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: claude --version
       - run: claude plugin validate --strict .claude-plugin/plugin.json
       - run: claude plugin validate --strict .
