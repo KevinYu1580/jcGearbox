@@ -48,6 +48,6 @@ Mention the defaults in one line each and change them only if asked: `low_model`
 
 ## 6. Check
 
-Tell the person to run `/reload-plugins` (or start a new session) so the settings apply, send any prompt, and look for `jcGearbox ▸ …` or `jcGearbox(shadow) ▸ …` in the status line. `jcGearbox: no API key` or `Jev HTTP 401` means the key is missing or wrong. `/jcGearbox-status` shows the full state and `/jcGearbox-log` the decisions.
+Tell the person to run `/reload-plugins` (or start a new session) so the settings apply, send any prompt, and look for `opus-5-5·high` or `shadow ▸ opus-5-5·high` in the status line. `no API key` or `Jev HTTP 401` means the key is missing or wrong. `/jcGearbox-status` shows the full state and `/jcGearbox-log` the decisions.
 
 End with a short list of what was set.

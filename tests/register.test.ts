@@ -14,7 +14,7 @@ describe('auto mode', () => {
     expect(w.asked).toHaveLength(1)
     expect(Object.keys(w.asked[0].questions)).toEqual(['tier', 'effort', 'high_stakes'])
     expect(w.asked[0].state).toEqual({ prompt: 'redesign the sync engine' })
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
   })
 
   test('tiers on one model pool their probability: a sure easy prompt goes down to sonnet', { options: { default_mode: 'auto', low_model: 'sonnet' } }, async ($, on) => {
@@ -90,7 +90,7 @@ describe('auto mode', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-5-5', 'claude-sonnet-5-5'] })
     expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
-    expect(w.status.at(-1)).toBe('jcGearbox: opus-5-5 was not used (sonnet-5-5 answered); not switching to it again')
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (sonnet-5-5 answered); not switching to it again')
     await turn($, 'ok', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
     expect(w.asked[1].questions.tier).toBeUndefined()
@@ -129,7 +129,7 @@ describe('ultracode', () => {
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'ULTRACODE audit every module for races', 't2')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·high · ultracode')
     await turn($, 'now fix the first one', 't3')
     expect((await command($, 'log 1')).text).not.toContain('ultracode')
@@ -183,7 +183,7 @@ describe('the status line shows what was sent', () => {
     const w = world(on, { reply: LOW })
     await start($)
     await turn($, 'what does git stash do', 't1')
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ haiku-4-5-20251001·-')
+    expect(w.status.at(-1)).toBe('haiku-4-5-20251001·-')
     const log = (await command($, 'log 1')).text
     expect(log).toContain('haiku-4-5-20251001·-')
     expect(log).not.toContain('jev')
@@ -194,7 +194,7 @@ describe('the status line shows what was sent', () => {
     await start($)
     await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: 'medium' })
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'medium' }])
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·?')
+    expect(w.status.at(-1)).toBe('opus-5-5·?')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
@@ -204,7 +204,7 @@ describe('the status line shows what was sent', () => {
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'ok', 't2', { effort: null })
     expect(w.steps.at(-1)?.effort).toBeUndefined()
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·medium')
+    expect(w.status.at(-1)).toBe('opus-5-5·medium')
   })
 })
 
@@ -225,7 +225,7 @@ describe('shadow mode', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('shadow ▸ opus-5-5·high')
   })
 
   test('/jcGearbox and its log show what was sent, not what Jev picked', async ($, on) => {
@@ -262,10 +262,10 @@ describe('shadow mode', () => {
     await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
     await command($, 'pin opus')
     await turn($, 'rename bar to baz', 't2', { models: ['claude-opus-5-5'] })
-    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ sonnet-5-5·low')
+    expect(w.status.at(-1)).toBe('shadow ▸ sonnet-5-5·low')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·high  jev sonnet-5-5·low')
     await turn($, 'rename baz to qux', 't3', { models: ['claude-opus-5-5'], effort: 'max' })
-    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ sonnet-5-5·low')
+    expect(w.status.at(-1)).toBe('shadow ▸ sonnet-5-5·low')
   })
 
   test('a pin, a /model switch and a changed effort still send every request unchanged', async ($, on) => {
@@ -293,7 +293,7 @@ describe('shadow mode', () => {
       { model: 'claude-opus-5-5', effort: 'high' },
       { model: 'claude-opus-5-5', effort: 'high' },
     ])
-    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ sonnet-5-5·low')
+    expect(w.status.at(-1)).toBe('shadow ▸ sonnet-5-5·low')
   })
 })
 
@@ -304,7 +304,7 @@ describe('failing open', () => {
     await turn($, 'redesign the sync engine', 't1')
     expect(w.asked).toHaveLength(0)
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcGearbox: no API key')
+    expect(w.status.at(-1)).toBe('no API key')
   })
 
   test('a Jev error leaves the first turn alone and says why', AUTO, async ($, on) => {
@@ -512,7 +512,7 @@ describe('/jcGearbox', () => {
     expect((await command($, 'shadow')).text).toBe('jcGearbox: shadow for this session.')
     await turn($, 'redesign the sync engine', 't1')
     expect(w.steps).toEqual([{ model: 'claude-sonnet-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('jcGearbox(shadow) ▸ opus-5-5·high')
+    expect(w.status.at(-1)).toBe('shadow ▸ opus-5-5·high')
     w.session = 'session-2'
     await turn($, 'redesign the sync engine', 't2')
     expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
@@ -540,7 +540,7 @@ describe('an unsure Jev', () => {
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'now the tests', 't2')
     expect(w.steps.map(s => s.effort)).toEqual(['xhigh', 'xhigh'])
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·xhigh')
+    expect(w.status.at(-1)).toBe('opus-5-5·xhigh')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·xhigh · Jev unsure')
   })
 
@@ -549,7 +549,7 @@ describe('an unsure Jev', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     await turn($, 'now the tests', 't2', { effort: 'max' })
-    expect(w.status.at(-1)).toBe('jcGearbox ▸ opus-5-5·max')
+    expect(w.status.at(-1)).toBe('opus-5-5·max')
     expect((await command($, 'log 1')).text).not.toContain('Jev unsure')
     await command($, 'pin haiku')
     await turn($, 'and the docs', 't3', { effort: 'max' })

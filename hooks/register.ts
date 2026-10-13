@@ -132,9 +132,9 @@ export const register: Register = (on, options) => {
     const { version, base } = await $.session.version()
     const entrypoint = (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) ?? ''
     ctx.disabled = !versionAtLeast(base ?? version, MIN_VERSION)
-      ? `jcGearbox: needs Claude Code ${MIN_VERSION}+`
+      ? `needs Claude Code ${MIN_VERSION}+`
       : SDK_ENTRYPOINTS.includes(entrypoint)
-        ? 'jcGearbox: off in claude -p and SDK runs'
+        ? 'off in claude -p and SDK runs'
         : undefined
     await $.command.register({
       name: 'jcGearbox',
@@ -481,7 +481,7 @@ async function plan(
   }
   const key = await apiKey($, opt)
   if (!key) {
-    $.ui.status('jcGearbox: no API key')
+    $.ui.status('no API key')
     return { apply: false }
   }
 
@@ -637,8 +637,8 @@ async function plan(
     // Only the model and effort: in auto what was sent, in shadow Jev's pick
     // (what was sent is the session's own). The why is in /jcGearbox-log; a Jev
     // error is said, or an unjudged prompt would look judged.
-    const head = auto ? 'jcGearbox' : `jcGearbox(${mode})`
-    $.ui.status(`${head} ▸ ${auto ? sentLabel(sent) : pick}${asked?.error ? ` · Jev ${asked.error}` : ''}`)
+    const head = auto ? '' : `${mode} ▸ `
+    $.ui.status(`${head}${auto ? sentLabel(sent) : pick}${asked?.error ? ` · Jev ${asked.error}` : ''}`)
 
     return { apply: auto, model: chosen, effort, logKey }
   })
@@ -712,7 +712,7 @@ async function drop($: EngineInterface, ctx: Ctx, model: string, answered: strin
   await change($, ctx, r => {
     r.badModels = [...(r.badModels ?? []), model]
   })
-  $.ui.status(`jcGearbox: ${label(model)} was not used (${answered}); not switching to it again`)
+  $.ui.status(`${label(model)} was not used (${answered}); not switching to it again`)
 }
 
 // The API answered as another model than the one the request named: say so
@@ -791,7 +791,7 @@ async function showMode($: EngineInterface, ctx: Ctx) {
   const [, r] = await record($)
   const mode = r.mode ?? ctx.opt.defaultMode
   const key = await apiKey($, ctx.opt)
-  $.ui.status(ctx.disabled ?? (mode === 'off' ? undefined : !key ? 'jcGearbox: no API key' : mode === 'auto' ? 'jcGearbox' : `jcGearbox(${mode})`))
+  $.ui.status(ctx.disabled ?? (mode === 'off' ? undefined : !key ? 'no API key' : mode === 'auto' ? 'auto' : mode))
 }
 
 const pct = (p: number) => p.toFixed(2)

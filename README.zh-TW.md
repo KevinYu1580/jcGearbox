@@ -26,7 +26,7 @@
 /plugin install jc-gearbox@jc-gearbox
 ```
 
-接著執行 **`/jcGearbox-setup`**，它會一步步帶你設好 key、模式和主要設定。沒有 key 時 mod 什麼都不做，狀態列顯示 `jcGearbox: no API key`。
+接著執行 **`/jcGearbox-setup`**，它會一步步帶你設好 key、模式和主要設定。沒有 key 時 mod 什麼都不做，狀態列顯示 `no API key`。
 
 **建議開啟 `send_assistant_tail`。** 它預設是關的，因為會把 Claude 上一則回答的結尾送到 TypeSafe；但開了之後 Jev 判斷準很多：「結果如下」要搭配 Claude 要你做什麼，才看得懂。
 
@@ -137,8 +137,8 @@ flowchart TD
 ## 狀態列
 
 ```
-jcGearbox ▸ opus-5-5·high           auto：實際送出的
-jcGearbox(shadow) ▸ opus-5-5·high   shadow：Jev 的選擇
+opus-5-5·high          auto：實際送出的
+shadow ▸ opus-5-5·high   shadow：Jev 的選擇
 ```
 
 auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcGearbox-log`，完整狀態看 `/jcGearbox-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。

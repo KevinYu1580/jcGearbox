@@ -26,7 +26,7 @@ It starts in **shadow** mode: it shows its pick in the status line but sends you
 /plugin install jc-gearbox@jc-gearbox
 ```
 
-Then run **`/jcGearbox-setup`**, which walks you through the key, the mode and the main settings. Without a key the mod does nothing and the status line says `jcGearbox: no API key`.
+Then run **`/jcGearbox-setup`**, which walks you through the key, the mode and the main settings. Without a key the mod does nothing and the status line says `no API key`.
 
 **Recommended: turn on `send_assistant_tail`.** It is off by default because it sends the end of Claude's last reply to TypeSafe, but Jev judges much better with it: "here are the results" only makes sense next to what Claude asked for.
 
@@ -137,8 +137,8 @@ Picking the session's original model again in the picker isn't a switch to Claud
 ## Status line
 
 ```
-jcGearbox ▸ opus-5-5·high           auto: what was sent
-jcGearbox(shadow) ▸ opus-5-5·high   shadow: Jev's pick
+opus-5-5·high          auto: what was sent
+shadow ▸ opus-5-5·high   shadow: Jev's pick
 ```
 
 In auto it's the model and effort actually sent; in shadow it's Jev's pick, and the request goes as the session has it. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Only a Jev error adds a note, `Jev <error>`; the rest (a pin, `/model`, an effort of your own, `ultracode`, `Jev unsure`) is in `/jcGearbox-log`, and `/jcGearbox-status` shows the whole state. The model and effort at the bottom of Claude Code are the session's own setting, which shadow sends as it is and auto may rewrite; in auto, the status line is what was actually sent.
