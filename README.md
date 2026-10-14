@@ -55,7 +55,7 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 
 - The model moves to a stronger tier's when Jev gives at least 0.5 (`tier_upgrade_probability`) that the task needs that tier or a stronger one, and to a weaker tier's only at 0.8 (`tier_min_probability`) that a weaker one will do; otherwise you stay on your model. A network error or 5xx from Jev on this prompt is retried once while a second is left.
 - The choice holds for the whole session, to keep the prompt cache. A new session or `/clear` decides again. A resumed or forked conversation doesn't: a fork takes over the choice of the session it came from when it can tell which one that was, and otherwise keeps the model it has.
-- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session. An overload or a server error, which Claude Code itself treats as transient, doesn't count.
+- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session and the status line says why; `/jcGearbox-auto` asks for it again. An overload or a server error, which Claude Code itself treats as transient, doesn't count, nor does an account problem any model would meet (billing, an account on hold, cloud credentials that won't load). A failed sign-in or a rate limit counts only for a model that hasn't answered in the session yet: that is how a model not enabled on Bedrock or Vertex, or one billed to usage credits you don't have, fails.
 - Switching to Fable this way skips the confirmation Claude Code shows before a model billed to usage credits: on a plan that bills Fable to credits, they are spent without asking. Set `long_model` to `off` if you don't want that.
 
 ### How the model changes in a session
@@ -137,7 +137,7 @@ Picking the session's original model again in the picker isn't a switch to Claud
 |---|---|
 | `/jcGearbox-setup` | Guided setup |
 | `/jcGearbox-status` (or `/jcGearbox`) | Mode, model, effort, the model each tier resolves to, Jev's last scores and version, and what the last request actually sent |
-| `/jcGearbox-auto`, `/jcGearbox-shadow`, `/jcGearbox-off` | Mode for this session (`/jcGearbox-auto` also clears pins) |
+| `/jcGearbox-auto`, `/jcGearbox-shadow`, `/jcGearbox-off` | Mode for this session (`/jcGearbox-auto` also clears pins and asks again for models it stopped using) |
 | `/jcGearbox-on` | Back on after `/jcGearbox-off`, in `default_mode` (`auto` when that is `off`); pins stay |
 | `/jcGearbox-pin <model>` | Pin an alias or a full model id |
 | `/jcGearbox-log [n]` | Last `n` decisions (default 20), across sessions |

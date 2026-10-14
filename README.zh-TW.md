@@ -55,7 +55,7 @@ session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因
 
 - Jev 給「需要這個 tier 或更強」至少 0.5 的機率（`tier_upgrade_probability`）時，換成較強 tier 的 model；給「較弱的就夠」至少 0.8（`tier_min_probability`）時，才換成較弱 tier 的 model；否則維持你選的 model。這個 prompt 遇到 Jev 的網路錯誤或 5xx，時間還剩一秒以上就重試一次。
 - 選擇會維持整個 session，避免 prompt cache 失效。新 session 或 `/clear` 會重新選；接續或 fork 的對話不會：fork 認得出來源 session 時沿用它的選擇，否則維持原本的 model。
-- API 不讓用某個 model（沒有權限、沒有提供），或 model 拒答時，這個 session 不會再要求它。過載或伺服器錯誤（Claude Code 自己也視為暫時性）不算。
+- API 不讓用某個 model（沒有權限、沒有提供），或 model 拒答時，這個 session 不會再要求它，狀態列會說明原因；`/jcGearbox-auto` 會重新要求它。過載或伺服器錯誤（Claude Code 自己也視為暫時性）不算，任何 model 都會遇到的帳號問題（帳單、帳號停權、雲端憑證載入失敗）也不算。登入失敗或用量上限，只對這個 session 還沒回答過的 model 才算：Bedrock 或 Vertex 上沒開通的 model、要用你沒有的 usage credits 計費的 model，都是這樣失敗的。
 - 這樣換成 Fable 時，不會出現 Claude Code 對「用 usage credits 計費的 model」的確認視窗：如果你的方案把 Fable 算進 credits，會直接扣。不想要就把 `long_model` 設成 `off`。
 
 ### 一個 session 裡 model 怎麼變
@@ -137,7 +137,7 @@ flowchart TD
 |---|---|
 | `/jcGearbox-setup` | 引導設定 |
 | `/jcGearbox-status`（或 `/jcGearbox`） | 模式、model、effort、各 tier 對應的 model、上一則的 Jev 分數與版本，以及上個請求實際送出的值 |
-| `/jcGearbox-auto`、`/jcGearbox-shadow`、`/jcGearbox-off` | 這個 session 的模式（`/jcGearbox-auto` 會一併清掉 pin） |
+| `/jcGearbox-auto`、`/jcGearbox-shadow`、`/jcGearbox-off` | 這個 session 的模式（`/jcGearbox-auto` 會一併清掉 pin，並重新要求停用的 model） |
 | `/jcGearbox-on` | `/jcGearbox-off` 之後重新開啟，回到 `default_mode`（它是 `off` 時改開 `auto`）；pin 保留 |
 | `/jcGearbox-pin <model>` | 固定用某個別名或完整 model ID |
 | `/jcGearbox-log [n]` | 最近 `n` 筆決策（預設 20），包含所有 session |

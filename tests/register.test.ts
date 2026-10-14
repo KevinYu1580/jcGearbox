@@ -377,6 +377,17 @@ describe('failing open', () => {
     expect(w.asked).toHaveLength(1)
   })
 
+  test('a store that will not write down the model that answered keeps the record and how the turn went', AUTO, async ($, on) => {
+    let sets = 0
+    const w = world(on, { reply: STRONG, storeFails: key => key.startsWith('session:') && ++sets > 1 })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    const log = [...w.db.entries()].find(([k]) => k.startsWith('log:'))?.[1] as any
+    expect(log.outcome.reason).toBe('answer')
+    expect(w.db.get('session:session-1')).toMatchObject({ decided: true, model: 'claude-opus-5-5' })
+    expect((w.db.get('session:session-1') as any).answered).toBeUndefined()
+  })
+
   test('a Jev that does not answer in 3 seconds, the default, is not waited for', AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG, hang: true })
     await start($)

@@ -399,9 +399,69 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: firstStrongThenContinue, noResponseFrom: 'claude-opus-5-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'model_not_found', failureAfter: true })
-    expect(w.status.at(-1)).toBe('opus-5-5 was not used (no response); not switching to it again')
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (model not found); not switching to it again')
     await turn($, 'ok', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
+  test('an account problem, which any model would meet, blames no model', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseAt: [0, 1] })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'billing_error' })
+    await turn($, 'try again', 't2', { reason: 'error', failure: 'cloud_credential_error', failureAfter: true })
+    await turn($, 'ok', 't3')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5'])
+    expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
+  test('a model that answers is written down for the session once', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    await turn($, 'ok', 't2')
+    expect((w.db.get('session:session-1') as any).answered).toEqual(['claude-opus-5-5'])
+  })
+
+  test('a failed sign-in, a verification or a rate limit blames no model that has answered in the session, across a restart', AUTO, async ($, on) => {
+    const w = world(on, {
+      reply: firstStrongThenContinue,
+      noResponseAt: [0, 1, 2],
+      store: { 'session:session-1': { decided: true, model: 'claude-opus-5-5', answered: ['claude-opus-5-5'] } },
+    })
+    await start($)
+    await turn($, 'go on', 't1', { reason: 'error', failure: 'authentication_failed' })
+    await turn($, 'try again', 't2', { reason: 'error', failure: 'rate_limit' })
+    await turn($, 'and again', 't3', { reason: 'error', failure: 'verification_required', failureAfter: true })
+    await turn($, 'ok', 't4')
+    expect(w.steps.map(s => s.model)).toEqual(Array(4).fill('claude-opus-5-5'))
+    expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
+  test('a model that has not answered in the session is blamed for a failed sign-in, as one not enabled on Bedrock fails', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseFrom: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'authentication_failed' })
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (authentication failed); not switching to it again')
+    await turn($, 'ok', 't2')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
+  test('a model that has not answered in the session is blamed for a rate limit, as one billed to usage credits fails', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseFrom: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'rate_limit', failureAfter: true })
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (rate limit); not switching to it again')
+    expect((w.db.get('session:session-1') as any).badModels).toEqual(['claude-opus-5-5'])
+  })
+
+  test('/jcGearbox auto asks again for a model it stopped asking for', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseOnce: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'rate_limit' })
+    await turn($, 'ok', 't2')
+    expect((await command($, 'auto')).text).toContain('unused models asked for again')
+    await turn($, 'go on', 't3')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5'])
   })
 
   test('a turn that ended otherwise than in an error blames no model', AUTO, async ($, on) => {

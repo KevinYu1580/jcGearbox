@@ -60,6 +60,7 @@ type SessionRecord = {
   userModel?: boolean // the person switched model (/model or the picker)
   effortPinned?: boolean // the person changed the effort
   badModels?: string[] // models the API did not answer as
+  answered?: string[] // models a rewritten request of the session got an answer from
   last?: Decision
 }
 
@@ -74,6 +75,7 @@ type Turn = {
   ownEffort?: boolean // the engine's effort changed mid-turn (a skill's own): it rides the rest of the turn
   plan?: Plan
   unanswered?: string // the model the last rewritten request named, when it got no response
+  answered?: string // the model a rewritten request of the turn got an answer from
   decided?: Promise<Plan | undefined> // the turn's decision, written down once Jev answers
   tally?: Tally // the turn's requests so far
 }
@@ -106,6 +108,7 @@ type Ctx = {
   turns: Map<string, Turn>
   logged: number
   answered: Set<string> // models a rewritten request got an answer from, since their last turn died unanswered
+  noted: Set<string> // each session's models written down as having answered (session id and model)
   joined: Set<string> // sessions that resume or fork a conversation already under way
   baselined: Set<string> // sessions whose engine effort this process has seen
   engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
@@ -126,6 +129,7 @@ export const register: Register = (on, options) => {
     turns: new Map(),
     logged: 0,
     answered: new Set(),
+    noted: new Set(),
     joined: new Set(),
     baselined: new Set(),
     engineModels: new Map(),
@@ -278,7 +282,10 @@ export const register: Register = (on, options) => {
     } else if (rewritesModel) {
       const noResponse = !result.usage && result.stopReason === null && !next.signal.aborted
       turn.unanswered = noResponse ? model : undefined
-      if (result.usage) ctx.answered.add(model)
+      if (result.usage) {
+        ctx.answered.add(model)
+        turn.answered = model
+      }
     }
     return result
   })
@@ -287,6 +294,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) {
       const turn = turns.get(e.turnId)
       turns.delete(e.turnId)
+      if (turn?.answered) await noteAnswered($, ctx, turn.answered)
       // A request with no response is the model's doing (an unknown id, no
       // access) only when the turn died of it: the engine retries others
       // itself, a context overflow after compacting, say. Why it died comes
@@ -420,16 +428,17 @@ async function jcGearbox($: EngineInterface, ctx: Ctx, sub: string, arg: string 
         delete r.userModel
         delete r.effortPinned
         delete r.rawEffort
+        delete r.badModels // asked for again: an account's trouble may have passed
       }
     })
     await showMode($, ctx)
-    return { text: sub === 'auto' ? 'jcGearbox: auto for this session; pins cleared.' : `jcGearbox: ${sub} for this session.` }
+    return { text: sub === 'auto' ? 'jcGearbox: auto for this session; pins cleared, unused models asked for again.' : `jcGearbox: ${sub} for this session.` }
   }
   if (sub === 'pin' && arg) {
     const pinned = resolveModel(arg, await resolution($, ctx, id))
     if (!pinned) return { text: `jcGearbox: cannot resolve "${arg}" here; give a full model id.` }
     if (r.badModels?.includes(pinned.id)) {
-      return { text: `jcGearbox: ${pinned.id} was not used when asked for earlier in this session; not pinning it.` }
+      return { text: `jcGearbox: ${pinned.id} was not used when asked for earlier in this session; not pinning it (/jcGearbox-auto asks for it again).` }
     }
     await change($, ctx, r => {
       r.pin = pinned.id
@@ -763,13 +772,20 @@ async function drop($: EngineInterface, ctx: Ctx, model: string, answered: strin
   $.ui.status(`${label(model)} was not used (${answered}); not switching to it again`)
 }
 
-// The errors Claude Code itself takes for ones that may clear by themselves.
-const TRANSIENT = new Set(['overloaded', 'server_error'])
+// Errors that say nothing of the model: ones Claude Code itself takes for
+// passing (an overload, a server error), and the account's own, which any
+// model would meet (billing, an account on hold or barred from OAuth, cloud
+// credentials that would not load).
+const NOT_THE_MODEL = new Set(['overloaded', 'server_error', 'billing_error', 'account_on_hold', 'oauth_org_not_allowed', 'cloud_credential_error'])
+// Errors that are the account's once the model has answered in the session,
+// and before that how a model the account cannot use fails: one not enabled on
+// Bedrock or Vertex (a failed sign-in), one billed to usage credits the
+// account lacks (a rate limit).
+const UNLESS_ANSWERED = new Set(['authentication_failed', 'verification_required', 'rate_limit'])
 
 // Blames the model a turn's rewritten request named once both reports of the
-// turn's failure are in. An overload or a server error says nothing of the
-// model; any other error is its doing, unless it has answered since its last
-// such turn, which is given one more.
+// turn's failure are in. Any other error is its doing, unless it has answered
+// since its last such turn, which is given one more.
 async function failed($: EngineInterface, ctx: Ctx, report: Failure) {
   const { model, error } = { ...ctx.failure, ...report }
   if (model === undefined || error === undefined) {
@@ -777,7 +793,26 @@ async function failed($: EngineInterface, ctx: Ctx, report: Failure) {
     return
   }
   ctx.failure = undefined
-  if (!TRANSIENT.has(error) && !ctx.answered.delete(model)) await drop($, ctx, model, 'no response')
+  if (NOT_THE_MODEL.has(error)) return
+  if (UNLESS_ANSWERED.has(error) && (await record($))[1].answered?.includes(model)) return
+  if (!ctx.answered.delete(model)) await drop($, ctx, model, error === 'unknown' ? 'no response' : error.replace(/_/g, ' '))
+}
+
+// Writes down, once, that a model answered a rewritten request of the session.
+// In place: a write the store will not take leaves the record as it was, and
+// the model's next answer tries again.
+async function noteAnswered($: EngineInterface, ctx: Ctx, model: string) {
+  const key = `${await $.session.id()} ${model}`
+  if (ctx.noted.has(key)) return
+  try {
+    await serial(ctx, async () => {
+      const [id, r] = await record($)
+      if (!r.answered?.includes(model)) await $.store.set(`session:${id}`, { ...r, answered: [...(r.answered ?? []), model] })
+    })
+    ctx.noted.add(key)
+  } catch {
+    // not written down
+  }
 }
 
 // The API answered as another model than the one the request named: say so
