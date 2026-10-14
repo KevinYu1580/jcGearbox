@@ -61,9 +61,10 @@ export function defaultEffort(model: string): Effort | undefined {
 
 // Start from the previous effort on a continuation, else from Jev's score,
 // unless Jev is unsure of the score (below minConfidence): then the previous
-// effort holds, and a first turn changes nothing. Then a complaint raises it
-// a level and a high-stakes task lifts it to high (xhigh is for long-running
-// work). The floor applies next and the ceiling last, so the ceiling wins.
+// effort holds, and with none (a first turn, or a continuation of turns that
+// set none) nothing changes. Then a complaint raises it a level and a
+// high-stakes task lifts it to high (xhigh is for long-running work). The
+// floor applies next and the ceiling last, so the ceiling wins.
 export function decideEffort(input: {
   signals: Signals | undefined
   previous: Effort | undefined
@@ -80,7 +81,7 @@ export function decideEffort(input: {
   const holds = (p: number | undefined) => p !== undefined && p > threshold
   const isContinuation = !isFirstTurn && signals.continuation !== undefined && signals.continuation > continuationThreshold
   const escalated = !isFirstTurn && holds(signals.escalate)
-  const unsure = !isContinuation && signals.effortConfidence !== undefined && signals.effortConfidence < minConfidence
+  const unsure = !(isContinuation && previous) && signals.effortConfidence !== undefined && signals.effortConfidence < minConfidence
   const said = unsure ? ({ unsure: true } as const) : {}
 
   let effort =

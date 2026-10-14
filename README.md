@@ -102,7 +102,7 @@ flowchart TD
     M --> E(["This prompt's effort"])
 ```
 
-1. Start from Jev's effort score (`low` to `max`). If the prompt only continues the last task ("ok", "go on", pasted output), keep the last effort. If Jev isn't sure of its score (confidence below `effort_min_confidence`, 0.7), keep the last effort too; on a session's first prompt, leave the effort as it is.
+1. Start from Jev's effort score (`low` to `max`). If the prompt only continues the last task ("ok", "go on", pasted output), keep the last effort. If Jev isn't sure of its score (confidence below `effort_min_confidence`, 0.7), keep the last effort too, and with none yet (on a session's first prompt, say) leave the effort as it is.
 2. If you say the last attempt failed, go up one level.
 3. If a mistake could do hard-to-undo damage (production, data deletion, migrations, auth, money, force-push), use at least `high`.
 4. Keep it between `min_effort` and `max_effort` (`max_effort` wins).

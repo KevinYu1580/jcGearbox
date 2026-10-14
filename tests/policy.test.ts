@@ -152,6 +152,13 @@ describe('decideEffort', () => {
     expect(decideEffort({ ...base, minConfidence: 0.7, maxEffort: 'medium', isFirstTurn: true, previous: undefined, signals: { ...unsure, highStakes: 0.95 } }).effort).toBe('medium')
   })
 
+  test('a continuation with no effort to keep takes the score only when Jev is sure of it', () => {
+    const go = (effortConfidence: number) =>
+      decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: undefined, signals: { effortScore: 4, effortConfidence, continuation: 0.9 } })
+    expect(go(0.2)).toEqual({ effort: undefined, unsure: true })
+    expect(go(0.9)).toEqual({ effort: 'max' })
+  })
+
   test('an unsure effort still goes up on a complaint and to high on a risk, and a continuation still keeps it', () => {
     const unsure = { effortScore: 0, effortConfidence: 0.3 }
     expect(decideEffort({ ...base, minConfidence: 0.7, isFirstTurn: false, previous: 'medium', signals: { ...unsure, escalate: 0.9 } }).effort).toBe('high')

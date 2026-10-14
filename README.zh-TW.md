@@ -102,7 +102,7 @@ flowchart TD
     M --> E(["這個 prompt 的 effort"])
 ```
 
-1. 從 Jev 的 effort 分數出發（`low` 到 `max`）。如果只是接續上一件事（「好」、「繼續」、貼上輸出），沿用上一回合的 effort。Jev 對自己的分數沒把握時（信心度低於 `effort_min_confidence`，0.7），也沿用上一回合的；session 的第一個 prompt 則不改 effort。
+1. 從 Jev 的 effort 分數出發（`low` 到 `max`）。如果只是接續上一件事（「好」、「繼續」、貼上輸出），沿用上一回合的 effort。Jev 對自己的分數沒把握時（信心度低於 `effort_min_confidence`，0.7），也沿用上一回合的；還沒有上一回合的 effort 時（例如 session 的第一個 prompt），就不改 effort。
 2. 你說上次失敗了，就升一級。
 3. 出錯可能造成難以挽回的損害時（正式環境、刪資料、資料庫遷移、認證、金流、force-push），至少用 `high`。
 4. 限制在 `min_effort` 和 `max_effort` 之間（以 `max_effort` 為準）。
