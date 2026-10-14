@@ -597,8 +597,14 @@ async function plan(
     }
 
     const chosen = ownModel ? undefined : current(r)
+    // A command with no baseline to tell its own effort from the session's takes
+    // the engine's effort onto the new model for this request only: not recorded.
     const effort =
-      r.effortPinned || (turn.command && (changed || !baseline)) ? undefined : effortFor(chosen ?? model, r.effort)
+      r.effortPinned || (turn.command && changed)
+        ? undefined
+        : turn.command && !baseline
+          ? effortFor(chosen ?? model, isEffort(raw) ? raw : undefined)
+          : effortFor(chosen ?? model, r.effort)
     // The ultracode keyword only lets Claude Code run workflows this turn; the
     // model and effort are routed as on any other turn.
     const auto = mode === 'auto'
