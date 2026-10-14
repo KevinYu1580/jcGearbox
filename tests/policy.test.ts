@@ -266,11 +266,13 @@ describe('effortFor', () => {
 })
 
 describe('defaultEffort', () => {
-  test('medium on Opus 5.5 and Haiku 5.5, high on the rest, none where effort is not taken', () => {
+  test('medium on the 5.5 models, xhigh on Opus 4.7, high on the rest, none where effort is not taken', () => {
     expect(defaultEffort('claude-opus-5-5')).toBe('medium')
     expect(defaultEffort('claude-opus-5-5[1m]')).toBe('medium')
     expect(defaultEffort('claude-haiku-5-5')).toBe('medium')
-    expect(defaultEffort('claude-sonnet-5-5')).toBe('high')
+    expect(defaultEffort('claude-sonnet-5-5')).toBe('medium')
+    expect(defaultEffort('claude-opus-4-7')).toBe('xhigh')
+    expect(defaultEffort('us.anthropic.claude-opus-4-7-v1:0')).toBe('xhigh')
     expect(defaultEffort('claude-fable-5-1')).toBe('high')
     expect(defaultEffort('claude-opus-5')).toBe('high')
     expect(defaultEffort('claude-haiku-4-5-20251001')).toBeUndefined()

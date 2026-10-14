@@ -110,8 +110,9 @@ flowchart TD
 
 | model | 能用 | 沒送 effort 時 |
 |---|---|---|
-| Opus 5.5、Haiku 5.5 | `low`–`max` | `medium` |
-| Fable、Mythos、Opus 5/4.8/4.7、Sonnet 5.5/5 | `low`–`max` | `high` |
+| Opus 5.5、Sonnet 5.5、Haiku 5.5 | `low`–`max` | `medium` |
+| Opus 4.7 | `low`–`max` | `xhigh` |
+| Fable、Mythos、Opus 5/4.8、Sonnet 5 | `low`–`max` | `high` |
 | Opus 4.6、Sonnet 4.6、Mythos Preview | 沒有 `xhigh`（改成 `high`） | `high` |
 | Opus 4.5 | 最高 `high` | `high` |
 | Haiku 4.5 和更舊的 model | 不支援 effort | — |
@@ -152,7 +153,7 @@ opus-5-5·high          auto：實際送出的
 shadow ▸ opus-5-5·high   shadow：Jev 的選擇
 ```
 
-auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model 但沒改 effort，由 Claude Code 依新 model 決定 effort。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcGearbox-log`，完整狀態看 `/jcGearbox-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
+auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model，effort 由 Claude Code 依新 model 決定：mod 沒設 effort，或設的剛好是 Claude Code 原本的等級（Claude Code 不當成有改）。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcGearbox-log`，完整狀態看 `/jcGearbox-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
 
 ## 設定
 

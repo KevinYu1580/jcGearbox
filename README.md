@@ -110,8 +110,9 @@ flowchart TD
 
 | Model | Takes | Default when none is sent |
 |---|---|---|
-| Opus 5.5, Haiku 5.5 | `low`–`max` | `medium` |
-| Fable, Mythos, Opus 5/4.8/4.7, Sonnet 5.5/5 | `low`–`max` | `high` |
+| Opus 5.5, Sonnet 5.5, Haiku 5.5 | `low`–`max` | `medium` |
+| Opus 4.7 | `low`–`max` | `xhigh` |
+| Fable, Mythos, Opus 5/4.8, Sonnet 5 | `low`–`max` | `high` |
 | Opus 4.6, Sonnet 4.6, Mythos Preview | no `xhigh` (becomes `high`) | `high` |
 | Opus 4.5 | up to `high` | `high` |
 | Haiku 4.5 and older models | no effort | — |
@@ -152,7 +153,7 @@ opus-5-5·high          auto: what was sent
 shadow ▸ opus-5-5·high   shadow: Jev's pick
 ```
 
-In auto it's the model and effort actually sent; in shadow it's Jev's pick, and the request goes as the session has it. An effort of `?` means the mod changed the model but not the effort, so Claude Code works out the effort for the new model. Only a Jev error adds a note, `Jev <error>`; the rest (a pin, `/model`, an effort of your own, `ultracode`, `Jev unsure`) is in `/jcGearbox-log`, and `/jcGearbox-status` shows the whole state. The model and effort at the bottom of Claude Code are the session's own setting, which shadow sends as it is and auto may rewrite; in auto, the status line is what was actually sent.
+In auto it's the model and effort actually sent; in shadow it's Jev's pick, and the request goes as the session has it. An effort of `?` means the mod changed the model and Claude Code works out the effort for the new model: the mod set none, or set the level Claude Code already had, which Claude Code doesn't count as a change. Only a Jev error adds a note, `Jev <error>`; the rest (a pin, `/model`, an effort of your own, `ultracode`, `Jev unsure`) is in `/jcGearbox-log`, and `/jcGearbox-status` shows the whole state. The model and effort at the bottom of Claude Code are the session's own setting, which shadow sends as it is and auto may rewrite; in auto, the status line is what was actually sent.
 
 ## Settings
 

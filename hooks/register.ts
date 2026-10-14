@@ -629,10 +629,16 @@ async function plan(
     // Decided: the request goes now, and the decision is written down after.
     early({ apply: auto, model: chosen, effort })
     const sentModel = auto && chosen ? chosen : model
-    // A model rewritten without an effort of ours runs at whatever effort the
-    // engine works out for it, which the person's settings decide.
-    const unknown = auto && chosen !== undefined && movesTo(chosen, model) && !effort && !r.effortPinned && !(turn.command && changed)
-    const sentEffort = auto && effort ? effort : unknown ? '?' : (rawEffort ?? null)
+    // Claude Code takes a request's effort only where it differs from the one
+    // it worked out for its own model: on another model, that level counts as
+    // none. A model rewritten without an effort of ours runs at the level the
+    // person set, else at its own default, so the level is known only when the
+    // engine's was not its model's default (the person's, then) or both
+    // models' defaults agree.
+    const moved = auto && chosen !== undefined && movesTo(chosen, model)
+    const dropped = moved && effort !== undefined && effort === rawEffort && rawEffort === defaultEffort(model) && defaultEffort(chosen) !== effort
+    const unknown = moved && (!effort || dropped) && !r.effortPinned && !(turn.command && changed)
+    const sentEffort = auto && effort && !dropped ? effort : unknown ? '?' : (rawEffort ?? null)
     const sent = { model: sentModel, effort: takesEffort(sentModel) ? sentEffort : null }
     const why = [
       ...(auto ? [] : ['shadow']),

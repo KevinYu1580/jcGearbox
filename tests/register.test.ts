@@ -198,6 +198,23 @@ describe('the status line shows what was sent', () => {
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
+  test("a level equal to the engine's own, which Claude Code drops, is unknown on a model whose default differs", AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-4-6'], effort: 'high' })
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
+    expect(w.status.at(-1)).toBe('opus-5-5·?')
+    expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
+  })
+
+  test("a level equal to the engine's own shows when it was set rather than its model's default", AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { effort: 'high' })
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
+  })
+
   test("a request without effort shows the model's default", AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)

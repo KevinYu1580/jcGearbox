@@ -52,11 +52,13 @@ export function effortFor(model: string, effort: Effort | undefined): Effort | u
   return effort
 }
 
-// The level a request without effort runs at: medium on Opus 5.5 and Haiku
-// 5.5, high on every other model that takes effort.
+// The level a request without effort runs at, as Claude Code's model table
+// has it: medium on Opus, Sonnet and Haiku 5.5, xhigh on Opus 4.7, high on
+// every other model that takes effort.
 export function defaultEffort(model: string): Effort | undefined {
   if (NO_EFFORT.test(model)) return undefined
-  return /(?:opus|haiku)-5-5/.test(model) ? 'medium' : 'high'
+  if (/(?:opus|sonnet|haiku)-5-5/.test(model)) return 'medium'
+  return /opus-4-7/.test(model) ? 'xhigh' : 'high'
 }
 
 // Start from the previous effort on a continuation, else from Jev's score,
