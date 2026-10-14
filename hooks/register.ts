@@ -108,10 +108,16 @@ type Ctx = {
   answered: Set<string> // models a rewritten request got an answer from, since their last turn died unanswered
   joined: Set<string> // sessions that resume or fork a conversation already under way
   baselined: Set<string> // sessions whose engine effort this process has seen
-  engineModels: Map<string, string> // each session's own model, as its last plain turn or switch left it
+  engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
   forks: Map<string, string | null> // each subagent seen: the model a fork of the main conversation started on, else null
+  failure?: Failure // the main loop's turn that died of an API error, as far as its two reports are in
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
+
+// A turn that died of an API error: the model its rewritten request named and
+// got no response from (turn.complete), and why it died (StopFailure). The two
+// come in either order.
+type Failure = { model?: string; error?: string }
 
 export const register: Register = (on, options) => {
   const ctx: Ctx = {
@@ -136,6 +142,13 @@ export const register: Register = (on, options) => {
       : SDK_ENTRYPOINTS.includes(entrypoint)
         ? 'off in claude -p and SDK runs'
         : undefined
+    // The session's own model before any turn, so that a command's own model
+    // on the first one is told from it.
+    if (!ctx.disabled) {
+      const id = await $.session.id()
+      const own = await sessionModel($, ctx, id)
+      if (own) ctx.engineModels.set(id, own)
+    }
     await $.command.register({
       name: 'jcGearbox',
       description: 'Jev model router: status, mode, pin, log, stats',
@@ -160,6 +173,7 @@ export const register: Register = (on, options) => {
   // session.start.
   on('classic.SessionStart', async ($, e, next) => {
     // The id the session goes on under: $.session.id() can still be the one it leaves.
+    if (e.model) ctx.engineModels.set(e.session_id, e.model)
     if (e.source === 'resume' || e.source === 'fork') ctx.joined.add(e.session_id)
     if (e.source === 'clear' || e.source === 'resume' || e.source === 'fork') {
       await prune($)
@@ -177,6 +191,7 @@ export const register: Register = (on, options) => {
   // A turn is the person's when it starts from the text they submitted; a
   // slash command's turn starts from tags naming the command they typed.
   on('turn.start', ($, e, next) => {
+    ctx.failure = undefined // half a report of the last turn's failure is not this turn's
     const text = e.text.startsWith(NON_USER_FRAME) ? e.text.slice(NON_USER_FRAME.length) : e.text
     const command = /^\s*(?:<command-message>[^<]*<\/command-message>\s*)?<command-name>(\/[^<]*)<\/command-name>/.exec(text)?.[1]
     const i = submitted.findLastIndex(s => s.text === text || (command !== undefined && typedCommand(s.text, command)))
@@ -202,7 +217,7 @@ export const register: Register = (on, options) => {
       if (!opt.forkFollowsRoute || ctx.disabled) return yield* next(e)
       if (!ctx.forks.has(e.agentId)) {
         const agent = (await $.agent.list()).find(a => a.id === e.agentId)
-        const own = ctx.engineModels.get(await $.session.id())
+        const own = await sessionModel($, ctx, await $.session.id())
         const routed = agent?.type === 'fork' && !agent.parentId && (own === undefined || sameModel(e.model, own))
         ctx.forks.set(e.agentId, routed ? e.model : null)
       }
@@ -274,12 +289,9 @@ export const register: Register = (on, options) => {
       turns.delete(e.turnId)
       // A request with no response is the model's doing (an unknown id, no
       // access) only when the turn died of it: the engine retries others
-      // itself, a context overflow after compacting, say. A model that has
-      // answered since its last such turn is given one more: an overload or
-      // a 5xx passes; twice in a row is the model's doing.
-      if (turn?.unanswered && e.reason === 'error' && !ctx.answered.delete(turn.unanswered)) {
-        await drop($, ctx, turn.unanswered, 'no response')
-      }
+      // itself, a context overflow after compacting, say. Why it died comes
+      // with StopFailure, before or after this.
+      if (turn?.unanswered && e.reason === 'error') await failed($, ctx, { model: turn.unanswered })
       // Also for a turn interrupted mid-request, whose step went no further.
       const logKey = (await turn?.decided)?.logKey
       const d = logKey ? ((await $.store.get(logKey)) as Decision | undefined) : undefined
@@ -300,6 +312,12 @@ export const register: Register = (on, options) => {
         }
       }
     }
+    return next(e)
+  })
+
+  // Why a turn of the main loop died of an API error, in Claude Code's own words.
+  on('classic.StopFailure', async ($, e, next) => {
+    if (!e.agent_id) await failed($, ctx, { error: e.error })
     return next(e)
   })
 
@@ -332,7 +350,7 @@ export const register: Register = (on, options) => {
     if (!arg || ctx.disabled) return result
     const [id] = await joinedRecord($, ctx)
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
-    const engine = ctx.engineModels.get(id)
+    const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
     const chosen =
       e.command === 'effort' ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg) : !!named && !!engine && bare(named.id) === bare(engine)
@@ -485,7 +503,6 @@ async function plan(
     return { apply: false }
   }
 
-  const { tiers } = await resolution($, ctx, id)
   const first = !joined.decided
   // Shadow sends every request as it is; after the first turn the model is
   // set, so a pinned effort, or a model that takes none, leaves Jev nothing
@@ -494,6 +511,7 @@ async function plan(
   else if (turn.isUser && !first && !turn.command && (joined.effortPinned || !takesEffort(current(joined) ?? model))) {
     early({ apply: true, model: current(joined) })
   }
+  const { tiers } = await resolution($, ctx, id)
   const offered = TIERS.filter(t => tiers[t])
   let asked: { result?: JevResult; error?: string } | undefined
   let jevMs: number | undefined
@@ -535,7 +553,7 @@ async function plan(
     const raw = rawEffort ?? null
     const baseline = ctx.baselined.has(id) && r.rawEffort !== undefined && r.rawModel === model
     const changed = baseline && r.rawEffort !== raw
-    const own = ctx.engineModels.get(id)
+    const own = turn.command ? await sessionModel($, ctx, id) : undefined
     const ownModel = !!turn.command && own !== undefined && !sameModel(model, own)
     if (!turn.command) {
       ctx.engineModels.set(id, model)
@@ -545,10 +563,10 @@ async function plan(
       ctx.baselined.add(id)
     }
 
+    let decided: ReturnType<typeof decideEffort> | undefined
     let unsure = false
     if (asked) {
-      const error = asked.error
-      const decided = decideEffort({
+      decided = decideEffort({
         signals: asked.result?.signals,
         // Before the router has decided an effort, the last turn ran at the engine's.
         previous: r.effort ?? (asked.result && isEffort(r.rawEffort) ? r.rawEffort : undefined),
@@ -576,26 +594,6 @@ async function plan(
       if (decided.effort) r.effort = decided.effort
       r.prompt = clip(redact(turn.text), CONTEXT_CHARS)
       delete r.replyTail // the reply to this prompt, if it shows one, takes its place
-      let limits: Record<string, number> = {}
-      try {
-        limits = Object.fromEntries((await $.session.usage()).rateLimits.map(l => [l.kind, l.percentUsed]))
-      } catch {
-        // a Claude Code that cannot tell leaves them out
-      }
-      r.last = {
-        at: await $.clock.now(),
-        mode,
-        first,
-        prompt: redact(turn.text).slice(0, 200),
-        promptLength: turn.text.length,
-        jev: asked.result ?? null,
-        ...(error ? { error } : {}),
-        ...(r.model ? { model: r.model } : {}),
-        ...(decided.effort ? { effort: decided.effort } : {}),
-        engine: { model, effort: raw },
-        ...(jevMs !== undefined ? { jevMs } : {}),
-        ...(Object.keys(limits).length > 0 ? { limits } : {}),
-      }
     }
 
     const chosen = ownModel ? undefined : current(r)
@@ -610,6 +608,8 @@ async function plan(
     // The ultracode keyword only lets Claude Code run workflows this turn; the
     // model and effort are routed as on any other turn.
     const auto = mode === 'auto'
+    // Decided: the request goes now, and the decision is written down after.
+    early({ apply: auto, model: chosen, effort })
     const sentModel = auto && chosen ? chosen : model
     // A model rewritten without an effort of ours runs at whatever effort the
     // engine works out for it, which the person's settings decide.
@@ -630,10 +630,31 @@ async function plan(
     const jevEffort = takesEffort(jevModel) ? (effortFor(jevModel, r.effort) ?? sent.effort ?? defaultEffort(sent.model) ?? '-') : '-'
     const pick = `${label(jevModel)}·${jevEffort}`
     let logKey: string | undefined
-    if (asked && r.last) {
-      r.last.sent = sent
-      r.last.pick = pick
-      if (why.length > 0) r.last.why = why
+    if (asked) {
+      let limits: Record<string, number> = {}
+      try {
+        limits = Object.fromEntries((await $.session.usage()).rateLimits.map(l => [l.kind, l.percentUsed]))
+      } catch {
+        // a Claude Code that cannot tell leaves them out
+      }
+      const error = asked.error
+      r.last = {
+        at: await $.clock.now(),
+        mode,
+        first,
+        prompt: redact(turn.text).slice(0, 200),
+        promptLength: turn.text.length,
+        jev: asked.result ?? null,
+        ...(error ? { error } : {}),
+        ...(r.model ? { model: r.model } : {}),
+        ...(decided?.effort ? { effort: decided.effort } : {}),
+        engine: { model, effort: raw },
+        ...(jevMs !== undefined ? { jevMs } : {}),
+        ...(Object.keys(limits).length > 0 ? { limits } : {}),
+        sent,
+        pick,
+        ...(why.length > 0 ? { why } : {}),
+      }
       logKey = `log:${r.last.at}:${id.slice(0, 8)}:${ctx.logged++}`
       await $.store.set(logKey, { ...r.last, session: id })
       await trim($, 'log:', KEEP)
@@ -669,6 +690,18 @@ function engineTiers(model: string, tiers: Tiers): Tier[] {
 function current(r: SessionRecord): string | undefined {
   const model = r.pin ?? (r.userModel ? undefined : r.model)
   return model && !r.badModels?.includes(model) ? model : undefined
+}
+
+// The session's own model: as its start, its last plain turn or a switch left
+// it, else as the engine reports it now.
+async function sessionModel($: EngineInterface, ctx: Ctx, id: string): Promise<string | undefined> {
+  const known = ctx.engineModels.get(id)
+  if (known) return known
+  try {
+    return await $.session.model()
+  } catch {
+    return undefined // a Claude Code that cannot tell
+  }
 }
 
 // The session's record. A resumed or forked conversation it has none of is
@@ -719,6 +752,23 @@ async function drop($: EngineInterface, ctx: Ctx, model: string, answered: strin
     r.badModels = [...(r.badModels ?? []), model]
   })
   $.ui.status(`${label(model)} was not used (${answered}); not switching to it again`)
+}
+
+// The errors Claude Code itself takes for ones that may clear by themselves.
+const TRANSIENT = new Set(['overloaded', 'server_error'])
+
+// Blames the model a turn's rewritten request named once both reports of the
+// turn's failure are in. An overload or a server error says nothing of the
+// model; any other error is its doing, unless it has answered since its last
+// such turn, which is given one more.
+async function failed($: EngineInterface, ctx: Ctx, report: Failure) {
+  const { model, error } = { ...ctx.failure, ...report }
+  if (model === undefined || error === undefined) {
+    ctx.failure = { model, error }
+    return
+  }
+  ctx.failure = undefined
+  if (!TRANSIENT.has(error) && !ctx.answered.delete(model)) await drop($, ctx, model, 'no response')
 }
 
 // The API answered as another model than the one the request named: say so
@@ -868,8 +918,8 @@ async function logText($: EngineInterface, n: number): Promise<string> {
 }
 
 // How the logged decisions Jev answered compare with what the engine would
-// have run: in shadow the sent request is the engine's own, in auto the log
-// keeps it.
+// have run (in shadow the sent request is the engine's own, in auto the log
+// keeps it), and how their turns went.
 async function statsText($: EngineInterface, opt: Options): Promise<string> {
   const ds: (Decision & { session?: string })[] = []
   for (const key of (await $.store.keys()).filter(k => k.startsWith('log:'))) {
@@ -914,6 +964,36 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
   const later = answered.filter(d => !d.first)
   const complaints = later.filter(d => (d.jev?.signals.escalate ?? 0) > opt.signalThreshold).length
   const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0)
+
+  // How the turns went, and how much of their prompt the cache served: a new
+  // model, or on most models a new effort, has a request read the whole
+  // conversation again. Each turn is set against the session's last logged one.
+  const ended = ds.flatMap(d => (d.outcome ? [d.outcome] : []))
+  const count = (reason: string) => ended.filter(o => o.reason === reason).length
+  const read = (ts: Tally[]) => {
+    const prompt = ts.reduce((n, t) => n + t.input + t.cacheRead + t.cacheWrite, 0)
+    return prompt > 0 ? `${pct(ts.reduce((n, t) => n + t.cacheRead, 0), prompt)} (${ts.length})` : undefined
+  }
+  const before = new Map<string | undefined, Decision>()
+  const after: Record<'same' | 'effort' | 'model', Tally[]> = { same: [], effort: [], model: [] }
+  for (const d of ds) {
+    const last = before.get(d.session)
+    before.set(d.session, d)
+    if (!d.outcome || !last?.sent || !d.sent) continue
+    after[last.sent.model !== d.sent.model ? 'model' : last.sent.effort !== d.sent.effort ? 'effort' : 'same'].push(d.outcome)
+  }
+  const cache = [
+    ['all', read(ended)],
+    ['same model and effort', read(after.same)],
+    ['new effort', read(after.effort)],
+    ['new model', read(after.model)],
+  ].flatMap(([name, share]) => (share ? [`${name} ${share}`] : []))
+  // The rate-limit windows as the last decision found them, and at their fullest.
+  const limits = new Map<string, { last: number; peak: number }>()
+  for (const d of ds) {
+    for (const [kind, used] of Object.entries(d.limits ?? {})) limits.set(kind, { last: used, peak: Math.max(used, limits.get(kind)?.peak ?? used) })
+  }
+
   return [
     `jcGearbox stats: the last ${ds.length} decisions, ${new Set(ds.map(d => d.session)).size} sessions, ${day(Math.min(...ats))} to ${day(Math.max(...ats))}`,
     `first-turn model, Jev's vs the engine's (${sum(models)}): up ${models.up} · same ${models.same} · down ${models.down}`,
@@ -922,6 +1002,11 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
     later.length > 0
       ? `complaints: ${complaints} of ${later.length} later turns Jev answered (${pct(complaints, later.length)})`
       : 'complaints: no later turns Jev answered yet',
+    ...(ended.length > 0
+      ? [`turns: ${count('answer')} answered · ${count('error')} error${count('error') === 1 ? '' : 's'} · ${count('aborted')} interrupted · ${count('refusal')} refused`]
+      : []),
+    ...(cache.length > 0 ? [`cache reads, share of the prompt: ${cache.join(' · ')}`] : []),
+    ...(limits.size > 0 ? [`rate limits, last (peak): ${[...limits].map(([kind, l]) => `${kind} ${l.last}% (${l.peak}%)`).join(' · ')}`] : []),
   ].join('\n')
 }
 

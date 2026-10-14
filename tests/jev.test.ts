@@ -157,6 +157,20 @@ describe('redact', () => {
     expect(redact(plain)).toBe(plain)
   })
 
+  test('hides lowercase keys, AWS secrets as JSON and CLIs print them, and a private key pasted in part', () => {
+    const hex = 'a1b2c3d4e5f6'.repeat(6)
+    expect(redact(`key sk-or-v1-${hex.slice(0, 64)} end`)).toBe('key [redacted] end')
+    expect(redact(`key sk-${hex.slice(0, 32)} end`)).toBe('key [redacted] end')
+    const secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+    expect(redact(`{"aws_secret_access_key": "${secret}"}`)).toBe('{"aws_secret_access_key": "[redacted]"}')
+    const sts = `"SecretAccessKey": "${secret}", "SessionToken": "${'IQoJb3JpZ2luX2VjEPr'.repeat(8)}"`
+    expect(redact(sts)).toBe('"SecretAccessKey": "[redacted]", "SessionToken": "[redacted]"')
+    expect(redact(`secretAccessKey: '${secret}'`)).toBe("secretAccessKey: '[redacted]'")
+    expect(redact(`aws_secret_access_key：${secret}`)).toBe('aws_secret_access_key：[redacted]')
+    const cut = '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\nBKcwggSjAgEAAoIBAQC7'
+    expect(redact(`see ${cut}\nwhy does it fail`)).toBe('see [redacted]\nwhy does it fail')
+  })
+
   test('every text sent to Jev is redacted', () => {
     const key = 'ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789'
     const body = buildRequest({ jevModel: 'jev-latest', prompt: `use ${key}`, isFirstTurn: false, previousPrompt: key, replyTail: key })

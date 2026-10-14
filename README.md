@@ -14,6 +14,14 @@ A Claude Code mod that picks the model and the effort for you, from how hard [Ty
 
 It starts in **shadow** mode: it shows its pick in the status line but sends your requests unchanged. Switch to `auto` once `/jcGearbox-log` has convinced you; the evidence that Jev judges difficulty well is thin.
 
+> [!IMPORTANT]
+> **A new model or effort costs the prompt cache.** Claude Code caches the conversation per model, and on most models per effort level too, so a change makes the next request read the whole conversation again, uncached ([Claude Code docs](https://code.claude.com/docs/en/prompt-caching)):
+>
+> - **Model**: every switch. That is why jcGearbox picks the model once per session. In `auto`, `/jcGearbox-pin`, `/jcGearbox-off`, `/jcGearbox-shadow` and `/model` mid-session are switches too.
+> - **Effort**: every change, except on Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 with an Anthropic API key or a Claude subscription. Amazon Bedrock, Google Cloud's Agent Platform (Vertex AI), the Claude apps gateway, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` and HIPAA organizations get no such exception, and neither do older models such as Opus 5 or 4.x.
+>
+> **So run jcGearbox on an Anthropic API key or a Claude subscription, with every tier on one of those four models** (`/jcGearbox-status` shows what each tier resolves to): there a new effort every prompt keeps the cache. Anywhere else, set `min_effort` and `max_effort` to the same level, so only the model is routed. `/jcGearbox-stats` shows how much of the prompt the cache served after a new effort and after none.
+
 ## Requirements
 
 - Claude Code 2.1.286 or newer. Mods are an early-access API, so a Claude Code release can break this one.
@@ -47,7 +55,7 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 
 - The model moves to a stronger tier's when Jev gives at least 0.5 (`tier_upgrade_probability`) that the task needs that tier or a stronger one, and to a weaker tier's only at 0.8 (`tier_min_probability`) that a weaker one will do; otherwise you stay on your model. A network error or 5xx from Jev on this prompt is retried once while a second is left.
 - The choice holds for the whole session, to keep the prompt cache. A new session or `/clear` decides again. A resumed or forked conversation doesn't: a fork takes over the choice of the session it came from when it can tell which one that was, and otherwise keeps the model it has.
-- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session.
+- If the API won't use a model (no access, not served) or the model declines the request, the mod stops asking for it in that session. An overload or a server error, which Claude Code itself treats as transient, doesn't count.
 - Switching to Fable this way skips the confirmation Claude Code shows before a model billed to usage credits: on a plan that bills Fable to credits, they are spent without asking. Set `long_model` to `off` if you don't want that.
 
 ### How the model changes in a session
@@ -132,7 +140,7 @@ Picking the session's original model again in the picker isn't a switch to Claud
 | `/jcGearbox-on` | Back on after `/jcGearbox-off`, in `default_mode` (`auto` when that is `off`); pins stay |
 | `/jcGearbox-pin <model>` | Pin an alias or a full model id |
 | `/jcGearbox-log [n]` | Last `n` decisions (default 20), across sessions |
-| `/jcGearbox-stats` | How the logged decisions compare with what the engine would have run: first-turn model up, same or down, effort higher, same or lower, Jev's errors and latency, complaints |
+| `/jcGearbox-stats` | How the logged decisions compare with what the engine would have run: first-turn model up, same or down, effort higher, same or lower, Jev's errors and latency, complaints; and how the turns went (answered, errors, interrupted, refused), how much of the prompt the cache served (in all, and after the same model and effort, a new effort or a new model as the session's last logged turn), and the rate limits at the last reading and their peak |
 
 `/jcGearbox <action>` still works.
 

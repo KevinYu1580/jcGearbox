@@ -363,6 +363,25 @@ describe('a model that is not served', () => {
     expect(w.status.join('\n')).not.toContain('was not used')
   })
 
+  test('an overload or a server error, which Claude Code takes for transient, blames no model', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseAt: [0, 1] })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'overloaded' })
+    await turn($, 'try again', 't2', { reason: 'error', failure: 'server_error', failureAfter: true })
+    await turn($, 'ok', 't3')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-opus-5-5'])
+    expect(w.status.join('\n')).not.toContain('was not used')
+  })
+
+  test('a model that is not found is blamed, whichever report of the failure comes first', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, noResponseFrom: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { reason: 'error', failure: 'model_not_found', failureAfter: true })
+    expect(w.status.at(-1)).toBe('opus-5-5 was not used (no response); not switching to it again')
+    await turn($, 'ok', 't2')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
   test('a turn that ended otherwise than in an error blames no model', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue, noResponseFrom: 'claude-opus-5-5' })
     await start($)

@@ -195,6 +195,17 @@ async function goOn($: any, w: World, source: 'resume' | 'fork', messages: World
 }
 
 describe('a conversation that goes on under a new id', () => {
+  test("its own model, as SessionStart names it, tells /model naming it for the person's choice", AUTO, async ($, on) => {
+    const w = world(on, { model: 'claude-opus-5-5', reply: CONTINUE, store: { 'session:session-2': { decided: true, model: 'claude-opus-5-5' } } })
+    await start($)
+    await $.classic.SessionStart({ source: 'resume', session_id: 'session-2', model: 'claude-sonnet-5-5' })
+    w.session = 'session-2'
+    await run($, 'model', 'sonnet')
+    await turn($, 'continue', 't1')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+    expect((await command($, '')).text).toContain('model: your choice (/model)')
+  })
+
   test('a resumed conversation with no record of it keeps the model it has', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
     await start($)

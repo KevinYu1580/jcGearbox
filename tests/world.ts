@@ -15,6 +15,7 @@ export type World = {
   listed: string[] // the directories the plugin listed
   registered: string[] // the slash commands the plugin registered
   session: string // what $.session.id() answers; a test may change it
+  model: string // what $.session.model() answers: the session's own model
   messages: { role: 'user' | 'assistant'; text: string; toolUses: [] }[] // what $.session.messages() answers
   clock: ReturnType<typeof mock.clock>
 }
@@ -41,6 +42,7 @@ export type WorldOptions = {
   storeHolds?: (key: string) => Promise<unknown> | undefined // a store.set of this key waits for the promise
   stepHold?: () => Promise<unknown> | undefined // a model request streams a chunk, then waits for the promise
   noUsage?: boolean // $.session.usage() fails, as on a Claude Code without it
+  model?: string // the session's own model, as $.session.model() answers it (default sonnet)
 }
 
 export const FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -68,6 +70,7 @@ export function world(on: On, o: WorldOptions = {}): World {
     listed: [],
     registered: [],
     session: 'session-1',
+    model: o.model ?? 'claude-sonnet-5-5',
     messages: [],
     clock: mock.clock(on),
   }
@@ -98,15 +101,19 @@ export function world(on: On, o: WorldOptions = {}): World {
   const catalog = o.catalog === undefined ? CATALOG : o.catalog
   const dir = `${env.CLAUDE_CONFIG_DIR ?? `${env.HOME}/.claude`}/cache/model-catalog`
   on('session.id', () => ({ value: w.session }))
+  on('session.model', () => ({ value: w.model }))
   on('session.messages', () => ({ value: w.messages }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.286', base: o.version ?? '2.1.286' } }))
   on('session.authorize', () => ({ value: o.thirdParty ? null : { handle: 'h', kind: 'bearer' as const } }))
+  // On Windows the engine hands these hooks the path made absolute there
+  // (C:\home\u\...): it is compared as the POSIX path the plugin asked for.
+  const posix = (path: string) => path.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
   on('fs.list', ($, e) => {
-    w.listed.push(e.path)
-    const found = catalog && e.path === dir
+    w.listed.push(posix(e.path))
+    const found = catalog && posix(e.path) === dir
     return { value: found ? [{ name: 'org-x-ccd.json', kind: 'file' as const, size: 1, mtimeMs: 1, isLink: false }] : [] }
   })
-  on('fs.read', ($, e) => ({ value: e.path === `${dir}/org-x-ccd.json` ? JSON.stringify(catalog) : '' }))
+  on('fs.read', ($, e) => ({ value: posix(e.path) === `${dir}/org-x-ccd.json` ? JSON.stringify(catalog) : '' }))
   on('ui.status', ($, e) => {
     w.status.push(e.text)
     return { value: undefined }
@@ -151,6 +158,7 @@ export function world(on: On, o: WorldOptions = {}): World {
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('classic.PostModelSwitch', () => ({}))
+  on('classic.StopFailure', () => ({}))
   on('turn.step', async function* ($, e) {
     w.steps.push(e.effort === undefined ? { model: e.model } : { model: e.model, effort: e.effort })
     const silent =
@@ -207,6 +215,8 @@ export type TurnOptions = {
   submit?: boolean // false: the turn starts with no prompt.submit
   answer?: string // the turn's final answer
   reason?: string // why the turn ended (default 'answer'; 'error' when an API error ended it)
+  failure?: string // why an API error ended it, as StopFailure says (default 'unknown')
+  failureAfter?: boolean // StopFailure comes after turn.complete, not before
 }
 
 // The turn.start the next prompt.submit fires on its way down.
@@ -226,7 +236,11 @@ export async function turn($: any, text: string, turnId: string, o: TurnOptions 
     await drain($.turn.step({ turnId, index, model, messageCount: 2 + index, ...(effort ? { effort } : {}) }))
   }
   const reason = o.reason ?? 'answer'
+  // A turn an API error ended raises StopFailure too, in no set order.
+  const stopFailure = () => (reason === 'error' ? $.classic.StopFailure({ error: o.failure ?? 'unknown' }) : undefined)
+  if (!o.failureAfter) await stopFailure()
   await $.turn.complete({ answer: o.answer ?? 'done', durationMs: 5, isAborted: reason === 'aborted', turnId, reason })
+  if (o.failureAfter) await stopFailure()
 }
 
 // The text a slash command's turn starts from, as the engine builds it.

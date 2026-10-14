@@ -14,6 +14,14 @@
 
 預設是 **shadow** 模式：只在狀態列顯示它的選擇，請求原樣送出。看 `/jcGearbox-log` 覺得可信後再切到 `auto`；Jev 判斷難度準不準，目前證據還很少。
 
+> [!IMPORTANT]
+> **換 model 或 effort 會讓 prompt cache 失效。** Claude Code 的對話快取依 model 分開，多數 model 還依 effort 等級分開；一換，下一個請求就要把整段對話重新讀過，沒有快取（[Claude Code 文件](https://code.claude.com/docs/zh-TW/prompt-caching)）：
+>
+> - **model**：每次切換都會。所以 jcGearbox 每個 session 只選一次 model。`auto` 模式下，session 中途用 `/jcGearbox-pin`、`/jcGearbox-off`、`/jcGearbox-shadow` 或 `/model` 也算切換。
+> - **effort**：每次改都會，只有 Opus 5.5、Sonnet 5.5、Haiku 5.5、Fable 5.1 搭配 Anthropic API key 或 Claude 訂閱時例外。Amazon Bedrock、Google Cloud 的 Agent Platform（Vertex AI）、Claude apps gateway、設了 `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`、HIPAA 組織都沒有這個例外，Opus 5、4.x 這類較舊的 model 也沒有。
+>
+> **因此建議用 Anthropic API key 或 Claude 訂閱，而且每個 tier 都落在這四個 model 上**（各 tier 實際對應哪個 model，看 `/jcGearbox-status`）：這樣每個 prompt 換 effort 也不會讓快取失效。其他環境請把 `min_effort` 和 `max_effort` 設成同一級，只讓 mod 選 model。`/jcGearbox-stats` 會列出換了 effort 和沒換時，prompt 從快取讀到的比例。
+
 ## 需求
 
 - Claude Code 2.1.286 以上。mod 是 early access API，Claude Code 改版可能讓它失效。
@@ -47,7 +55,7 @@ session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因
 
 - Jev 給「需要這個 tier 或更強」至少 0.5 的機率（`tier_upgrade_probability`）時，換成較強 tier 的 model；給「較弱的就夠」至少 0.8（`tier_min_probability`）時，才換成較弱 tier 的 model；否則維持你選的 model。這個 prompt 遇到 Jev 的網路錯誤或 5xx，時間還剩一秒以上就重試一次。
 - 選擇會維持整個 session，避免 prompt cache 失效。新 session 或 `/clear` 會重新選；接續或 fork 的對話不會：fork 認得出來源 session 時沿用它的選擇，否則維持原本的 model。
-- API 不讓用某個 model（沒有權限、沒有提供），或 model 拒答時，這個 session 不會再要求它。
+- API 不讓用某個 model（沒有權限、沒有提供），或 model 拒答時，這個 session 不會再要求它。過載或伺服器錯誤（Claude Code 自己也視為暫時性）不算。
 - 這樣換成 Fable 時，不會出現 Claude Code 對「用 usage credits 計費的 model」的確認視窗：如果你的方案把 Fable 算進 credits，會直接扣。不想要就把 `long_model` 設成 `off`。
 
 ### 一個 session 裡 model 怎麼變
@@ -132,7 +140,7 @@ flowchart TD
 | `/jcGearbox-on` | `/jcGearbox-off` 之後重新開啟，回到 `default_mode`（它是 `off` 時改開 `auto`）；pin 保留 |
 | `/jcGearbox-pin <model>` | 固定用某個別名或完整 model ID |
 | `/jcGearbox-log [n]` | 最近 `n` 筆決策（預設 20），包含所有 session |
-| `/jcGearbox-stats` | 紀錄中的決策和引擎原本的比：第一回合 model 升級、不變或降級，effort 調高、不變或調低，Jev 的錯誤率與延遲，抱怨比例 |
+| `/jcGearbox-stats` | 紀錄中的決策和引擎原本的比：第一回合 model 升級、不變或降級，effort 調高、不變或調低，Jev 的錯誤率與延遲，抱怨比例；以及各回合的結果（回答、錯誤、中斷、拒答）、prompt 從快取讀到的比例（全部，以及和該 session 上一筆紀錄比，model 與 effort 都沒換、換了 effort、換了 model 時各自的比例），還有額度最近一次的用量與最高值 |
 
 舊寫法 `/jcGearbox <動作>` 仍可用。
 

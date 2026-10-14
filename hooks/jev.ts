@@ -89,10 +89,16 @@ export function clip(text: string, max: number): string {
 // Common key and token shapes, so that a pasted secret reaches neither Jev
 // nor the plugin's store.
 const SECRETS = [
-  /-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----/g,
+  // A private key, or its headers and lines as far as it was pasted.
+  /-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----(?:[\s\S]*?-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----|(?:\s*(?:[A-Za-z-]+: [^\n]*|[A-Za-z0-9+/=]{16,}))+)/g,
   // A random key mixes capitals and digits, which a kebab-case name does not.
   /\bsk-(?:ant-|proj-)?(?=[\w-]*[A-Z])(?=[\w-]*\d)[\w-]{20,}/g,
-  /(?<=aws_?secret_?(?:access_?)?key\s*[=:]\s*["']?)[A-Za-z0-9/+=]{40}/gi,
+  // A lowercase one (OpenRouter's sk-or-v1-, DeepSeek's) is a run of 32 or more.
+  /\bsk-(?:[a-z0-9]{1,8}-){0,3}[A-Za-z0-9]{32,}/g,
+  // An AWS secret or session token after its name: in a shell or a config
+  // file, in JSON or a CLI's output (SecretAccessKey), after a full-width colon.
+  /(?<=(?:aws)?[_-]?secret[_-]?(?:access)?[_-]?key["']?\s*[=:：＝]\s*["']?)[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])/gi,
+  /(?<=(?:aws)?[_-]?session[_-]?token["']?\s*[=:：＝]\s*["']?)[A-Za-z0-9/+=]{100,}/gi,
   /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g,
   /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
   /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
