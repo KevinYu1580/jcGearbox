@@ -156,6 +156,20 @@ describe('slash commands', () => {
   })
 })
 
+describe('a first command that moves the model', () => {
+  test("with no baseline, the engine's effort rides the new model for that turn and nothing is recorded", AUTO, async ($, on) => {
+    const UNSURE = { answers: { ...STRONG.answers, effort: { type: 'score', score: 0.3, confidence: 0.5 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? UNSURE : CONTINUE) })
+    await start($)
+    await turn($, '/review x', 't1', { origin: 'composer', startText: commandText('review', 'x'), effort: 'xhigh' })
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'xhigh' })
+    expect(w.status.at(-1)).toBe('opus-5-5·xhigh')
+    await turn($, 'ok', 't2', { effort: 'high' })
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+    expect((await command($, '')).text).not.toContain('effort: yours')
+  })
+})
+
 describe('a turn that starts after its first request', () => {
   test('keeps what that request decides when it starts while the request is being decided', AUTO, async ($, on) => {
     let release = () => {}

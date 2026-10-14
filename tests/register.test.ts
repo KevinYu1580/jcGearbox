@@ -189,11 +189,11 @@ describe('the status line shows what was sent', () => {
     expect(log).not.toContain('jev')
   })
 
-  test('a model rewritten without an effort of the router\'s own shows its effort as unknown', AUTO, async ($, on) => {
+  test('a model rewritten with no effort of the router\'s or the engine\'s shows its effort as unknown', AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
-    await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: 'medium' })
-    expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'medium' }])
+    await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: null })
+    expect(w.steps).toEqual([{ model: 'claude-opus-5-5' }])
     expect(w.status.at(-1)).toBe('opus-5-5·?')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
