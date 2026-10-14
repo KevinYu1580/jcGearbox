@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, EASY, STRONG, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
+import { AUTO, CONTINUE, EASY, STRONG, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
 
 const HAIKU = 'claude-haiku-4-5-20251001'
 
@@ -66,6 +66,28 @@ describe('model switches', () => {
     for (const args of ['status', 'help', 'auto', 'unset', 'ultracode on', 'extreme']) await run($, 'effort', args)
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
+    expect((await command($, '')).text).not.toContain('effort: yours')
+  })
+
+  test('/effort auto hands the effort back: the level Claude Code drops for it pins nothing', AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { effort: 'xhigh' })
+    await run($, 'effort', 'auto')
+    await turn($, 'ok', 't2', { effort: 'medium' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'low'])
+    expect((await command($, '')).text).not.toContain('effort: yours')
+  })
+
+  test('/effort unset after a level of your own lets the effort change again', AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', 'high')
+    await turn($, 'ok', 't2')
+    await run($, 'effort', 'unset')
+    await turn($, 'go on', 't3', { effort: 'medium' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'high', 'low'])
     expect((await command($, '')).text).not.toContain('effort: yours')
   })
 

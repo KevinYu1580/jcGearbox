@@ -126,6 +126,7 @@ Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the
 | `/jcGearbox-pin <model>` | Uses that model for this session |
 | `/model <name>` (even the model in use) or another model in the picker, after the first prompt | Stops changing the model for this session |
 | `/effort <level>` (even the level in use) or another effort in the picker, after the first prompt | Stops changing the effort for this session |
+| `/effort auto` (or `unset`) | Changes the effort again |
 | `/jcGearbox-auto` | Drops all of the above |
 
 Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`. An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.

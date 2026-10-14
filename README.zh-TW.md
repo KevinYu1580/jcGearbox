@@ -126,6 +126,7 @@ flowchart TD
 | `/jcGearbox-pin <model>` | 這個 session 改用該 model |
 | 第一個 prompt 之後打 `/model <名稱>`（即使是目前的 model），或在選單換成別的 model | 這個 session 不再改 model |
 | 第一個 prompt 之後打 `/effort <等級>`（即使是目前的等級），或在選單換成別的 effort | 這個 session 不再改 effort |
+| `/effort auto`（或 `unset`） | 重新開始調整 effort |
 | `/jcGearbox-auto` | 清掉以上全部 |
 
 在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcGearbox-pin <model>`。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。

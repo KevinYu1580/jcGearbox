@@ -343,12 +343,21 @@ export const register: Register = (on, options) => {
   // /model naming the model in use, or /effort naming a level, is the
   // person's choice, which no switch reports. A switch to another model reports
   // itself; a word that only shows something, the picker or a name that is no
-  // model or level is no choice.
+  // model or level is no choice. /effort auto (or unset) hands the effort back.
   on('command.run', { command: ['model', 'effort'] }, async ($, e, next) => {
     const result = await next(e)
     const arg = e.args.trim()
     if (!arg || ctx.disabled) return result
     const [id] = await joinedRecord($, ctx)
+    if (e.command === 'effort' && /^(?:auto|unset)$/i.test(arg)) {
+      // Claude Code drops its own level: the next turn's is a new baseline.
+      await change($, ctx, r => {
+        if (r.rawEffort === undefined && !r.effortPinned) return false
+        delete r.rawEffort
+        delete r.effortPinned
+      })
+      return result
+    }
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
     const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
