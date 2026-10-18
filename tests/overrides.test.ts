@@ -2,6 +2,8 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { AUTO, CONTINUE, EASY, STRONG, SURE_EASY, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
 
+const FABLE = 'claude-fable-5-1'
+
 const HAIKU = 'claude-haiku-4-5-20251001'
 
 const COMPLAINT = {
@@ -107,6 +109,31 @@ describe('model switches', () => {
     expect((await command($, '')).text).toContain('effort: max')
   })
 
+  test('the level the router goes on from is kept within min_effort and max_effort', { options: { default_mode: 'auto', max_effort: 'high' } }, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', 'max')
+    await turn($, 'ok', 't2', { effort: 'max' })
+    await run($, 'effort', 'auto')
+    // A turn nobody typed asks Jev nothing and sends the level the router holds.
+    await turn($, 'a task finished', 't3', { origin: 'task-notification', effort: 'max' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'max', 'high'])
+    expect((await command($, '')).text).toContain('effort: high')
+  })
+
+  test('after a number of your own, /effort auto goes on from no level in particular', AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', '50')
+    await turn($, 'ok', 't2', { effort: 50 as any })
+    await run($, 'effort', 'auto')
+    await turn($, 'go on', 't3', { effort: 'medium' })
+    // Nothing of the router's to go on from: the continuation rides the engine's own level.
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 50, 'medium'])
+  })
+
   test('/model or /effort before the first turn is only the starting point', AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
@@ -135,44 +162,6 @@ describe('model switches', () => {
     await turn($, 'ok', 't2', { models: [HAIKU] })
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
   })
-})
-
-describe('plan mode', () => {
-  // Jev sure that Haiku will do: low alone clears the downgrade probability.
-  const TO_HAIKU = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.85, balanced: 0.1, strong: 0.05 }, confidence: 0.8 } } }
-  const toHaiku = (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE)
-  const easy = (body: any) => (body.questions.tier ? SURE_EASY : CONTINUE)
-
-  test('a session routed to Haiku plans on the balanced tier, as the engine would, and executes on Haiku again', AUTO, async ($, on) => {
-    const w = world(on, { reply: toHaiku })
-    await start($)
-    await turn($, 'rename foo to bar', 't1')
-    await turn($, 'plan the rename', 't2', { permissionMode: 'plan' })
-    await turn($, 'ok, do it', 't3')
-    expect(w.steps.map(s => s.model)).toEqual([HAIKU, 'claude-sonnet-5-5', HAIKU])
-  })
-
-  test('a model the engine raised for planning is not pulled back down', AUTO, async ($, on) => {
-    const w = world(on, { reply: toHaiku })
-    await start($)
-    await turn($, 'rename foo to bar', 't1')
-    await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'auto')
-    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
-    await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
-    await turn($, 'ok, do it', 't3')
-    expect(w.steps.map(s => s.model)).toEqual([HAIKU, 'claude-opus-5-5', HAIKU])
-  })
-
-  test('under opusplan the tiers are anchored on balanced, whichever phase the first prompt is sent in', AUTO, async ($, on) => {
-    // Planning on Opus: against a strong anchor, low and balanced would add up to the downgrade probability.
-    const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
-    await start($)
-    await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
-    await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
-    await turn($, 'ok, do it', 't2')
-    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
-    expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
-  })
 
   test("a resume restoring the model is not the person's switch", AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
@@ -184,6 +173,169 @@ describe('plan mode', () => {
   })
 })
 
+describe('plan mode', () => {
+  // Jev sure that Haiku will do: low alone clears the downgrade probability.
+  const TO_HAIKU = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.85, balanced: 0.1, strong: 0.05 }, confidence: 0.8 } } }
+  const toHaiku = (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE)
+  const easy = (body: any) => (body.questions.tier ? SURE_EASY : CONTINUE)
+  const strong = (body: any) => (body.questions.tier ? STRONG : CONTINUE)
+
+  test('a session routed to Haiku plans on the balanced tier, as the engine would, and executes on Haiku again', AUTO, async ($, on) => {
+    const w = world(on, { reply: toHaiku })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan' })
+    // The status line, the record and the log say what was sent, at the router's effort.
+    expect(w.status.at(-1)).toBe('sonnet-5-5·low')
+    expect((await command($, '')).text).toContain('sent: sonnet-5-5·low · plan mode')
+    expect((await command($, 'log 1')).text).toContain('sonnet-5-5·low  jev haiku-4-5-20251001·- · plan mode')
+    await turn($, 'ok, do it', 't3')
+    expect(w.steps).toEqual([{ model: HAIKU, effort: 'high' }, { model: 'claude-sonnet-5-5', effort: 'low' }, { model: HAIKU, effort: 'high' }])
+  })
+
+  test('a model the engine raised for planning is not pulled back down', AUTO, async ($, on) => {
+    const w = world(on, { reply: toHaiku })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'auto')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+    expect(w.status.at(-1)).toBe('opus-5-5·low')
+    await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
+    await turn($, 'ok, do it', 't3')
+    expect(w.steps).toEqual([{ model: HAIKU, effort: 'high' }, { model: 'claude-opus-5-5', effort: 'low' }, { model: HAIKU, effort: 'high' }])
+  })
+
+  test('an engine model that names no tier is raised to the balanced tier too', AUTO, async ($, on) => {
+    const w = world(on, { reply: toHaiku, model: 'my-gateway-model' })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['my-gateway-model'] })
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', models: ['my-gateway-model'] })
+    expect(w.steps.map(s => s.model)).toEqual([HAIKU, 'claude-sonnet-5-5'])
+  })
+
+  test('a pinned model that names no tier is kept: it is below nothing', { options: { default_mode: 'auto' } }, async ($, on) => {
+    const w = world(on, { reply: toHaiku, thirdParty: true })
+    await start($)
+    await command($, 'pin my-gateway-model')
+    await turn($, 'rename foo to bar', 't1')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan' })
+    expect(w.steps.map(s => s.model)).toEqual(['my-gateway-model', 'my-gateway-model'])
+  })
+
+  test('a balanced model the API did not answer as is not asked for again in plan mode', { options: { default_mode: 'auto', balanced_model: 'claude-sonnet-5-5-bad' } }, async ($, on) => {
+    const BAD = 'claude-sonnet-5-5-bad'
+    const w = world(on, { reply: toHaiku, noResponseFrom: BAD })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', reason: 'error', failure: 'model_not_found' })
+    await turn($, 'plan it again', 't3', { permissionMode: 'plan' })
+    await turn($, 'and again', 't4', { permissionMode: 'plan' })
+    expect(w.steps.map(s => s.model)).toEqual([HAIKU, BAD, 'claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    expect((w.db.get(`session:${w.session}`) as any).badModels).toEqual([BAD])
+  })
+
+  test('a session on Haiku whose first prompt is sent in plan mode is measured from Haiku, not from the Sonnet the engine plans on', AUTO, async ($, on) => {
+    // Balanced and strong add up to the upgrade probability; low alone does not clear the downgrade one.
+    const UP = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.5, balanced: 0.4, strong: 0.1 }, confidence: 0.5 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? UP : CONTINUE), model: HAIKU })
+    await start($)
+    await turn($, 'plan the rename', 't1', { permissionMode: 'plan', models: ['claude-sonnet-5-5'] })
+    await turn($, 'ok, do it', 't2', { models: [HAIKU] })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    expect((await command($, '')).text).toContain('model: claude-sonnet-5-5 (chosen on the first turn)')
+  })
+
+  describe('under opusplan', () => {
+    test('the tiers are anchored on balanced while planning on Opus', AUTO, async ($, on) => {
+      // Against a strong anchor, low and balanced would add up to the downgrade probability.
+      const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+      await start($)
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
+      await turn($, 'ok, do it', 't2')
+      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+      // The steps alone would look the same against a strong anchor (Sonnet is the engine's executing model): the pick tells.
+      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+    })
+
+    test('so a hard task planned on Opus is executed on Opus too', AUTO, async ($, on) => {
+      const w = world(on, { reply: strong, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+      await start($)
+      await turn($, 'redesign the sync engine', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
+      await turn($, 'ok, do it', 't2')
+      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
+    })
+
+    test('the setting is read as opusplan[1m] too', AUTO, async ($, on) => {
+      world(on, { reply: easy, model: 'claude-opus-5-5[1m]', settings: { model: 'opusplan[1m]' } })
+      await start($)
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5[1m]'] })
+      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+    })
+
+    test('from ANTHROPIC_MODEL', AUTO, async ($, on) => {
+      world(on, { reply: easy, model: 'claude-opus-5-5', env: { ANTHROPIC_MODEL: 'opusplan' } })
+      await start($)
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+    })
+
+    test('from /model opusplan typed before the first prompt, which may report no switch', AUTO, async ($, on) => {
+      world(on, { reply: easy, model: 'claude-opus-5-5' })
+      await start($)
+      await run($, 'model', 'opusplan')
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+    })
+
+    test('from a switch asking for it by name', AUTO, async ($, on) => {
+      world(on, { reply: easy, model: 'claude-opus-5-5' })
+      await start($)
+      await $.classic.PostModelSwitch({ from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opusplan', source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '5m', estimated_cache_write_usd: 0, pricing: 'catalog' })
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+    })
+
+    test('ANTHROPIC_MODEL naming another model wins over the setting: an Opus session of its own is measured from Opus', AUTO, async ($, on) => {
+      const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' }, env: { ANTHROPIC_MODEL: 'claude-opus-5-5' } })
+      await start($)
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      await turn($, 'ok, do it', 't2', { models: ['claude-opus-5-5'] })
+      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+      expect((await command($, '')).text).toContain('model: claude-sonnet-5-5 (chosen on the first turn)')
+    })
+
+    test('a switch the person makes to another model ends it', AUTO, async ($, on) => {
+      const w = world(on, { reply: easy, model: 'claude-sonnet-5-5', settings: { model: 'opusplan' } })
+      await start($)
+      await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'picker')
+      w.model = 'claude-opus-5-5'
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      await turn($, 'ok, do it', 't2', { models: ['claude-opus-5-5'] })
+      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+    })
+
+    test('a session on Fable over the setting is measured from Fable: it is not pulled down to Opus', AUTO, async ($, on) => {
+      // Strong and long add up to the upgrade probability from balanced; from long, nothing moves.
+      const LONGISH = { answers: { ...STRONG.answers, tier: { type: 'choice', choice: 'strong', probabilities: { low: 0.05, balanced: 0.05, strong: 0.6, long: 0.3 }, confidence: 0.6 } } }
+      const w = world(on, { reply: (body: any) => (body.questions.tier ? LONGISH : CONTINUE), model: FABLE, settings: { model: 'opusplan' } })
+      await start($)
+      await turn($, 'redesign the sync engine', 't1', { permissionMode: 'plan', models: [FABLE] })
+      await turn($, 'ok, do it', 't2', { models: [FABLE] })
+      expect(w.steps.map(s => s.model)).toEqual([FABLE, FABLE])
+      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+    })
+
+    test('a session on Haiku over the setting is measured from Haiku: it still moves up', AUTO, async ($, on) => {
+      const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE), model: HAIKU, settings: { model: 'opusplan' } })
+      await start($)
+      await turn($, 'rename foo to bar', 't1', { models: [HAIKU] })
+      expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5'])
+    })
+  })
+})
+
 describe('/jcGearbox auto', () => {
   test('clears a model switch and an effort pin', AUTO, async ($, on) => {
     const w = world(on, { reply: firstStrongThenContinue })
@@ -192,8 +344,24 @@ describe('/jcGearbox auto', () => {
     await turn($, 'ok', 't2', { effort: 'low' })
     await switchModel($, 'claude-sonnet-5-5', HAIKU)
     await command($, 'auto')
-    await turn($, 'go on', 't3', { models: [HAIKU], effort: 'low' })
-    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+    await turn($, 'go on', 't3', { models: [HAIKU], effort: 'medium' })
+    // The effort goes on from the level the person last ran at, as after /effort auto.
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
+    expect(w.asked.at(-1).state.previous.effort).toBe('low')
+    expect((await command($, '')).text).not.toContain('effort: yours')
+  })
+
+  test("goes on from the level the person last ran at, as /effort auto does, though Claude Code keeps its own level", AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', 'max')
+    await turn($, 'ok', 't2', { effort: 'max' })
+    await turn($, 'and the docs', 't3', { effort: 'max' })
+    await run($, 'jcGearbox-auto')
+    await turn($, 'go on', 't4', { effort: 'max' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'max', 'max', 'max'])
+    expect(w.asked.at(-1).state.previous.effort).toBe('max')
   })
 
   test('an effort set before it does not pin again', AUTO, async ($, on) => {
@@ -203,7 +371,7 @@ describe('/jcGearbox auto', () => {
     await turn($, 'ok', 't2', { effort: 'low' })
     await command($, 'auto')
     await turn($, 'go on', 't3', { effort: 'medium' })
-    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'low' })
   })
 })
 

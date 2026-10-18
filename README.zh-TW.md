@@ -124,12 +124,12 @@ flowchart TD
 
 | 你 | mod |
 |---|---|
-| `/jcGearbox-pin <model>` | 這個 session 改用該 model |
+| `/jcGearbox-pin <model>` | 這個 session 改用該 model（plan mode 除外，見下） |
 | 第一個 prompt 之後打 `/model <名稱>`（即使是目前的 model），或在選單換成別的 model | 這個 session 不再改 model |
 | 第一個 prompt 之後打 `/effort <等級>`（即使是目前的等級），或在選單換成別的 effort | 這個 session 不再改 effort |
-| `/effort auto`（或 `unset`） | 重新開始調整 effort，從你最後實際跑的等級接下去 |
-| 進入 plan mode（含 `opusplan` 的規劃階段） | 那些回合不改寫到比 `balanced` 弱、也不比 Claude Code 當下自己用的 model 弱的 model（Claude Code 自己會在規劃時升級，mod 不把它拉回來）；`opusplan` 下各 tier 以 `balanced` 為基準 |
-| `/jcGearbox-auto` | 清掉以上全部 |
+| `/effort auto`（或 `unset`） | 重新開始調整 effort，從你最後實際跑的等級接下去（夾在 `min_effort` 與 `max_effort` 之間） |
+| 進入 plan mode（含 `opusplan` 的規劃階段） | 那些回合不改寫到比 `balanced` 弱（要有設 balanced tier，且 API 回得了它）、也不比 Claude Code 當下自己用的 model 弱的 model（Claude Code 自己會在規劃時升級，mod 不把它拉回來）；pin 到認不出 tier 的 model 時照用。`opusplan` 下在 Opus 上規劃時，各 tier 以 `balanced` 為基準。mod 從 `model` 設定、`ANTHROPIC_MODEL` 或 `/model` 判斷 `opusplan`，看不到 `--model` 旗標 |
+| `/jcGearbox-auto` | 清掉以上全部；effort 從你最後實際跑的等級接下去 |
 
 在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcGearbox-pin <model>`。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。
 

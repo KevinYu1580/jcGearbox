@@ -33,6 +33,10 @@ function atMost(effort: Effort, ceiling: Effort): Effort {
   return EFFORTS.indexOf(effort) <= EFFORTS.indexOf(ceiling) ? effort : ceiling
 }
 
+export function clampEffort(effort: Effort, floor: Effort, ceiling: Effort): Effort {
+  return atMost(atLeast(effort, floor), ceiling)
+}
+
 function oneUp(effort: Effort): Effort {
   return EFFORTS[Math.min(EFFORTS.length - 1, EFFORTS.indexOf(effort) + 1)] ?? effort
 }
@@ -93,18 +97,20 @@ export function decideEffort(input: {
         ? effortFromScore(signals.effortScore)
         : previous
   // Nothing to hold or score: only a risky task sets an effort.
-  if (!effort) return { effort: holds(signals.highStakes) ? atMost(atLeast('high', minEffort), maxEffort) : undefined, ...said }
+  if (!effort) return { effort: holds(signals.highStakes) ? clampEffort('high', minEffort, maxEffort) : undefined, ...said }
 
   // A complaint goes up from the attempt it complains about, even when Jev
   // takes it for a new task and scores the short complaint itself.
   if (escalated) effort = oneUp(previous ? atLeast(effort, previous) : effort)
   if (holds(signals.highStakes)) effort = atLeast(effort, 'high')
-  return { effort: atMost(atLeast(effort, minEffort), maxEffort), ...said }
+  return { effort: clampEffort(effort, minEffort, maxEffort), ...said }
 }
 
 // Tiers weakest first.
 const LADDER: readonly Tier[] = ['low', 'balanced', 'strong', 'long']
-export const tierRank = (tier: Tier): number => LADDER.indexOf(tier)
+export function tierRank(tier: Tier): number {
+  return LADDER.indexOf(tier)
+}
 
 // The model the first turn moves the session to, or none to stay on the
 // engine's. Moving up to a tier takes `upgrade` of Jev's probability that the
@@ -131,8 +137,10 @@ export function pickModel(input: {
   if (engine.length > 0) {
     // Asked about no tier of the engine's, Jev's answer adds up to one on one
     // side of it: it could not say "stay", so nothing is compared against it.
+    // (The router asks about the engine's tier and gives one left out of the
+    // answer 0; this holds for any other caller.)
     if (!engine.some(t => probabilities[t] !== undefined)) return undefined
-    const ranks = engine.map(t => LADDER.indexOf(t))
+    const ranks = engine.map(tierRank)
     const lo = Math.min(...ranks)
     const hi = Math.max(...ranks)
     for (let i = LADDER.length - 1; i > hi; i--) {

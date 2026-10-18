@@ -4,7 +4,7 @@ import { JEV_URL, buildRequest, clip, parseAnswers, redact } from './jev.ts'
 import type { JevRequest, JevResult } from './jev.ts'
 import { newestCatalogFile, resolveModel, surfaceOf, versionAtLeast } from './models.ts'
 import type { Resolved } from './models.ts'
-import { EFFORTS, TIERS, decideEffort, defaultEffort, effortFor, isEffort, pickModel, tierRank } from './policy.ts'
+import { EFFORTS, TIERS, clampEffort, decideEffort, defaultEffort, effortFor, isEffort, pickModel, tierRank } from './policy.ts'
 import type { Effort, Tier } from './policy.ts'
 
 const MIN_VERSION = '2.1.286'
@@ -20,6 +20,8 @@ const SDK_ENTRYPOINTS = ['sdk-cli', 'sdk-ts', 'sdk-py']
 const USAGE = 'Usage: /jcGearbox [status | auto | shadow | off | on | pin <model> | log [n] | stats], or /jcGearbox-<that>'
 // The engine puts this before a Slack message's text by the time its turn starts.
 const NON_USER_FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
+// The model setting that runs Opus while planning and Sonnet while executing.
+const OPUSPLAN = /^opusplan(\[\w+\])?$/i
 
 type Mode = 'auto' | 'shadow' | 'off'
 
@@ -51,6 +53,7 @@ type SessionRecord = {
   decided?: boolean // the first user turn has chosen the session's model
   model?: string // that choice; absent keeps the session's own model
   effort?: Effort // the latest effort decided
+  jevEffort?: Effort // Jev's own latest effort, kept while the person holds theirs: the pick shows it
   rawEffort?: string | number | null // the engine's own effort at the last turn
   rawModel?: string // the engine's model at that turn
   prompt?: string // the last user prompt, for the next turn's context
@@ -112,9 +115,9 @@ type Ctx = {
   joined: Set<string> // sessions that resume or fork a conversation already under way
   baselined: Set<string> // sessions whose engine effort this process has seen
   engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
-  forks: Map<string, string | null> // each subagent seen: the model a fork of the main conversation started on, else null
-  planMode: Map<string, boolean> // each session's permission mode at its last prompt: in plan mode or not
-  opusplan?: boolean // the session's model setting is opusplan: Opus while planning, Sonnet while executing
+  forks: Map<string, { model: string; inPlan: boolean } | null> // each subagent seen: the model a fork of the main conversation started on, and whether in a plan-mode turn; else null
+  planMode: Set<string> // the sessions whose last prompt was sent in plan mode
+  opusplan?: boolean // the main loop's model is opusplan (Opus while planning, Sonnet while executing), as far as the mod can tell
   failure?: Failure // the main loop's turn that died of an API error, as far as its two reports are in
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
@@ -136,7 +139,7 @@ export const register: Register = (on, options) => {
     baselined: new Set(),
     engineModels: new Map(),
     forks: new Map(),
-    planMode: new Map(),
+    planMode: new Set(),
     queue: Promise.resolve(),
   }
   const { opt, submitted, turns } = ctx
@@ -155,11 +158,7 @@ export const register: Register = (on, options) => {
       const id = await $.session.id()
       const own = await sessionModel($, ctx, id)
       if (own) ctx.engineModels.set(id, own)
-      try {
-        ctx.opusplan = (await $.settings.read()).model === 'opusplan'
-      } catch {
-        // a Claude Code that cannot tell
-      }
+      ctx.opusplan = await readOpusplan($)
     }
     await $.command.register({
       name: 'jcGearbox',
@@ -229,13 +228,17 @@ export const register: Register = (on, options) => {
       if (!opt.forkFollowsRoute || ctx.disabled) return yield* next(e)
       if (!ctx.forks.has(e.agentId)) {
         const agent = (await $.agent.list()).find(a => a.id === e.agentId)
-        const own = await sessionModel($, ctx, await $.session.id())
+        const session = await $.session.id()
+        const own = await sessionModel($, ctx, session)
         const routed = agent?.type === 'fork' && !agent.parentId && (own === undefined || sameModel(e.model, own))
-        ctx.forks.set(e.agentId, routed ? e.model : null)
+        // Made in a plan-mode turn, it plans throughout: the floor holds for all its steps.
+        ctx.forks.set(e.agentId, routed ? { model: e.model, inPlan: ctx.planMode.has(session) } : null)
       }
-      if (ctx.forks.get(e.agentId) !== e.model || !(await apiKey($, opt))) return yield* next(e)
-      const [, r] = await serial(ctx, () => record($))
-      const model = (r.mode ?? opt.defaultMode) === 'auto' ? current(r) : undefined
+      const fork = ctx.forks.get(e.agentId)
+      if (!fork || fork.model !== e.model || !(await apiKey($, opt))) return yield* next(e)
+      const [session, r] = await serial(ctx, () => record($))
+      const routed = (r.mode ?? opt.defaultMode) === 'auto' ? current(r) : undefined
+      const model = floored(fork.inPlan, ctx.resolved?.session === session ? ctx.resolved.tiers : {}, routed, e.model, r.badModels)
       return yield* next(model && movesTo(model, e.model) ? { ...e, model } : e)
     }
     if (ctx.disabled) return yield* next(e)
@@ -261,10 +264,8 @@ export const register: Register = (on, options) => {
       turn.ownEffort = true
     }
 
-    const { apply } = turn.plan
+    const { apply, model } = turn.plan
     const effort = turn.ownEffort ? undefined : turn.plan.effort
-    const session = await $.session.id()
-    const model = floored(ctx, session, ctx.resolved?.session === session ? ctx.resolved.tiers : {}, turn.plan.model, e.model)
     const rewritesModel = apply && model !== undefined && movesTo(model, e.model)
     const result =
       !rewritesModel && !(apply && effort)
@@ -347,6 +348,9 @@ export const register: Register = (on, options) => {
   on('classic.PostModelSwitch', async ($, e, next) => {
     ctx.engineModels.set(await $.session.id(), e.to_model)
     const byPerson = e.source === 'command' || e.source === 'picker' || e.source === 'sdk'
+    // The model asked for by name says whether it is opusplan; the engine's
+    // own switch (a fallback, opusplan changing phase) names none.
+    if ((byPerson || e.source === 'resume') && e.requested_model) ctx.opusplan = OPUSPLAN.test(e.requested_model)
     if (byPerson && e.from_model !== e.to_model) {
       await joinedRecord($, ctx) // a resumed or forked conversation was decided before this
       await change($, ctx, r => {
@@ -361,7 +365,9 @@ export const register: Register = (on, options) => {
   // The permission mode each prompt is sent in: in plan mode the engine runs a
   // stronger model of its own, which the router's rewrite respects (floored).
   on('classic.UserPromptSubmit', async ($, e, next) => {
-    ctx.planMode.set(await $.session.id(), e.permission_mode === 'plan')
+    const id = await $.session.id()
+    if (e.permission_mode === 'plan') ctx.planMode.add(id)
+    else ctx.planMode.delete(id)
     return next(e)
   })
 
@@ -379,15 +385,18 @@ export const register: Register = (on, options) => {
       // and the router goes on from the level the person last ran at.
       await change($, ctx, r => {
         if (r.rawEffort === undefined && !r.effortPinned) return false
-        if (r.effortPinned && isEffort(r.rawEffort)) r.effort = r.rawEffort
-        delete r.rawEffort
-        delete r.effortPinned
+        unpinEffort(r, opt)
       })
       return result
     }
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
     const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
+    // Also when the model it resolves to is the one in use, which no switch reports.
+    if (e.command === 'model') {
+      if (OPUSPLAN.test(arg)) ctx.opusplan = true
+      else if (named) ctx.opusplan = false
+    }
     const chosen =
       e.command === 'effort' ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg) : !!named && !!engine && bare(named.id) === bare(engine)
     if (chosen) {
@@ -445,8 +454,7 @@ async function jcGearbox($: EngineInterface, ctx: Ctx, sub: string, arg: string 
       if (sub === 'auto') {
         delete r.pin
         delete r.userModel
-        delete r.effortPinned
-        delete r.rawEffort
+        unpinEffort(r, opt)
         delete r.badModels // asked for again: an account's trouble may have passed
       }
     })
@@ -545,18 +553,21 @@ async function plan(
   // set, so a pinned effort, or a model that takes none, leaves Jev nothing
   // to change. The request goes ahead and the answer is written down after.
   if (mode === 'shadow') early({ apply: false })
-  else if (turn.isUser && !first && !turn.command && (joined.effortPinned || !takesEffort(current(joined) ?? model))) {
-    early({ apply: true, model: current(joined) })
-  }
   const { tiers } = await resolution($, ctx, id)
+  const inPlan = ctx.planMode.has(id)
+  if (mode !== 'shadow' && turn.isUser && !first && !turn.command) {
+    const routed = floored(inPlan, tiers, current(joined), model, joined.badModels)
+    if (joined.effortPinned || !takesEffort(routed ?? model)) early({ apply: true, model: routed })
+  }
   const offered = TIERS.filter(t => tiers[t])
-  // The tiers the session's own model stands for (a command's own model is
-  // not the session's): the first turn's pick is made relative to them.
-  const anchor = anchorTiers(ctx, turn.command ? ((await sessionModel($, ctx, id)) ?? model) : model, tiers)
-  // The engine's tier is always among the choices, with or without a model of
-  // its own, so that Jev can give "stay on this model" its share: asked about
-  // weaker tiers only, its answer would add up to one below the engine and
-  // the session would move down whatever the task.
+  // A command's own model is not the session's.
+  const own = turn.command ? await sessionModel($, ctx, id) : undefined
+  // The tiers the session's own model stands for: the first turn's pick is
+  // made relative to them. The engine's tier is always among the choices,
+  // with or without a model of its own, so that Jev can give "stay on this
+  // model" its share: asked about weaker tiers only, its answer would add up
+  // to one below the engine and the session would move down whatever the task.
+  const anchor = first ? anchorTiers(ctx, id, await sessionBase($, ctx, id, own ?? model, tiers), tiers) : []
   const choices = TIERS.filter(t => offered.includes(t) || anchor.includes(t))
   let asked: { result?: JevResult; error?: string } | undefined
   let jevMs: number | undefined
@@ -598,7 +609,6 @@ async function plan(
     const raw = rawEffort ?? null
     const baseline = ctx.baselined.has(id) && r.rawEffort !== undefined && r.rawModel === model
     const changed = baseline && r.rawEffort !== raw
-    const own = turn.command ? await sessionModel($, ctx, id) : undefined
     const ownModel = !!turn.command && own !== undefined && !sameModel(model, own)
     if (!turn.command) {
       ctx.engineModels.set(id, model)
@@ -609,7 +619,6 @@ async function plan(
     }
 
     let decided: ReturnType<typeof decideEffort> | undefined
-    let unsure = false
     if (asked) {
       decided = decideEffort({
         signals: asked.result?.signals,
@@ -623,8 +632,6 @@ async function plan(
         maxEffort: opt.maxEffort,
         minConfidence: opt.effortMinConfidence,
       })
-      // Said only where it changed what runs: an effort of the router's, on a model that takes one.
-      unsure = !!decided.unsure && !r.effortPinned && takesEffort(current(r) ?? model)
       if (first) {
         r.decided = true
         const ids: Partial<Record<Tier, string>> = {}
@@ -639,14 +646,21 @@ async function plan(
           downgrade: opt.tierMinProbability,
         })
       }
-      // While the person holds the effort, the router's own idea of it is not
-      // written down: the next turn goes on from the level that actually ran.
-      if (decided.effort && !r.effortPinned) r.effort = decided.effort
+      // Jev's own effort is written down each turn, for the pick to show. While
+      // the person holds the effort it is not the router's: the next turn goes
+      // on from the level that actually ran.
+      if (decided.effort) {
+        r.jevEffort = decided.effort
+        if (!r.effortPinned) r.effort = decided.effort
+      }
       r.prompt = clip(redact(turn.text), CONTEXT_CHARS)
       delete r.replyTail // the reply to this prompt, if it shows one, takes its place
     }
 
-    const chosen = ownModel ? undefined : current(r)
+    // The model the request goes on: the session's, floored in plan mode.
+    const chosen = ownModel ? undefined : floored(inPlan, tiers, current(r), model, r.badModels)
+    // Said only where it changed what runs: an effort of the router's, on a model that takes one.
+    const unsure = !!decided?.unsure && !r.effortPinned && takesEffort(chosen ?? model)
     // A command with no baseline to tell its own effort from the session's takes
     // the engine's effort onto the new model for this request only: not recorded.
     const effort =
@@ -678,12 +692,13 @@ async function plan(
       ...(r.pin ? ['pin'] : r.userModel ? ['/model'] : []),
       ...(r.effortPinned ? ['effort pinned'] : []),
       ...(ownModel ? ['command model'] : []),
+      ...(!ownModel && chosen !== current(r) ? ['plan mode'] : []),
       ...(unsure ? ['Jev unsure'] : []),
     ]
     // Jev's own pick: the first turn's model, at the effort Jev decided (the
     // sent one when it decided none).
     const jevModel = r.model ?? model
-    const jevEffort = takesEffort(jevModel) ? (effortFor(jevModel, r.effort) ?? sent.effort ?? defaultEffort(sent.model) ?? '-') : '-'
+    const jevEffort = takesEffort(jevModel) ? (effortFor(jevModel, r.jevEffort ?? r.effort) ?? sent.effort ?? defaultEffort(sent.model) ?? '-') : '-'
     const pick = `${label(jevModel)}·${jevEffort}`
     let logKey: string | undefined
     if (asked) {
@@ -741,11 +756,39 @@ function engineTiers(model: string, tiers: Tiers): Tier[] {
   return tier ? [tier] : []
 }
 
-// The tiers a session's picks are made relative to. Under opusplan the engine
-// runs Opus while planning and Sonnet while executing, so the model of the
-// moment says nothing of the person's choice: their choice is balanced.
-function anchorTiers(ctx: Ctx, model: string, tiers: Tiers): Tier[] {
-  return ctx.opusplan && tiers.balanced ? ['balanced'] : engineTiers(model, tiers)
+// The tiers a session's picks are made relative to: its model's. Under
+// opusplan the engine runs Opus while planning and Sonnet while executing, so
+// Opus in plan mode says nothing of the person's choice: that is balanced.
+// (Any other model under the setting is one chosen for this session over it.)
+function anchorTiers(ctx: Ctx, session: string, model: string, tiers: Tiers): Tier[] {
+  const own = engineTiers(model, tiers)
+  const planningOnOpus = !!ctx.opusplan && ctx.planMode.has(session) && own.includes('strong') && !own.includes('balanced')
+  return planningOnOpus && tiers.balanced ? ['balanced'] : own
+}
+
+// The model the session runs on outside plan mode. In plan mode the engine
+// raises a session on Haiku to Sonnet; the main loop's model, as the engine
+// reports it, still names the one chosen.
+async function sessionBase($: EngineInterface, ctx: Ctx, session: string, model: string, tiers: Tiers): Promise<string> {
+  if (!ctx.planMode.has(session)) return model
+  try {
+    const own = await $.session.model()
+    return own && rankOf(own, tiers) >= 0 && rankOf(own, tiers) < rankOf(model, tiers) ? own : model
+  } catch {
+    return model // a Claude Code that cannot tell
+  }
+}
+
+// Whether the main loop's model is opusplan, as far as the mod can tell:
+// ANTHROPIC_MODEL, else the model setting, else ANTHROPIC_DEFAULT_MODEL (the
+// --model flag it cannot see).
+async function readOpusplan($: EngineInterface): Promise<boolean> {
+  try {
+    const model = (await $.env.get('ANTHROPIC_MODEL')) ?? (await $.settings.read()).model ?? (await $.env.get('ANTHROPIC_DEFAULT_MODEL'))
+    return typeof model === 'string' && OPUSPLAN.test(model)
+  } catch {
+    return false // a Claude Code that cannot tell
+  }
 }
 
 // The highest rung the model stands on, or -1 for one that names no tier.
@@ -756,11 +799,14 @@ function rankOf(model: string, tiers: Tiers): number {
 
 // In plan mode the engine itself runs a stronger model (opusplan's Opus, and
 // Sonnet for a session on Haiku): the router then rewrites to nothing weaker
-// than the balanced tier, and never pulls a model the engine raised back down.
-function floored(ctx: Ctx, session: string, tiers: Tiers, planned: string | undefined, engineModel: string): string | undefined {
-  if (planned === undefined || ctx.planMode.get(session) !== true) return planned
-  const balanced = tiers.balanced?.id
-  const target = balanced && rankOf(planned, tiers) >= 0 && rankOf(planned, tiers) < tierRank('balanced') ? balanced : planned
+// than the balanced tier (one the API answers as), and never pulls a model the
+// engine raised back down. A model that names no tier is below nothing.
+function floored(inPlan: boolean, tiers: Tiers, planned: string | undefined, engineModel: string, bad: readonly string[] = []): string | undefined {
+  if (planned === undefined || !inPlan) return planned
+  const rank = rankOf(planned, tiers)
+  if (rank < 0) return planned
+  const balanced = tiers.balanced && !bad.includes(tiers.balanced.id) ? tiers.balanced.id : undefined
+  const target = balanced && rank < tierRank('balanced') ? balanced : planned
   return rankOf(engineModel, tiers) > rankOf(target, tiers) ? undefined : target
 }
 
@@ -826,8 +872,20 @@ function lastEffort(r: SessionRecord): string | undefined {
   return r.effortPinned && typeof r.rawEffort === 'string' ? r.rawEffort : r.effort
 }
 
+// The person hands the effort back: the router goes on from the level they
+// last ran at, within its bounds; after a number, from none in particular.
+function unpinEffort(r: SessionRecord, opt: Options) {
+  if (r.effortPinned) {
+    if (isEffort(r.rawEffort)) r.effort = clampEffort(r.rawEffort, opt.minEffort, opt.maxEffort)
+    else delete r.effort
+  }
+  delete r.effortPinned
+  delete r.rawEffort
+}
+
 async function drop($: EngineInterface, ctx: Ctx, model: string, answered: string) {
   await change($, ctx, r => {
+    if (r.badModels?.includes(model)) return false
     r.badModels = [...(r.badModels ?? []), model]
   })
   $.ui.status(`${label(model)} was not used (${answered}); not switching to it again`)
@@ -1043,7 +1101,7 @@ async function statsText($: EngineInterface, opt: Options): Promise<string> {
   // A first turn moved up or down the tiers, or kept the engine's model.
   const rank = (model: string | undefined) => {
     const tier = familyTier(model)
-    return tier ? ['low', 'balanced', 'strong', 'long'].indexOf(tier) : undefined
+    return tier ? tierRank(tier) : undefined
   }
   const models = { up: 0, same: 0, down: 0 }
   const answered = ds.filter(d => d.jev)

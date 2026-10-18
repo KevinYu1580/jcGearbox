@@ -245,6 +245,21 @@ describe('shadow mode', () => {
     expect(w.status.at(-1)).toBe('shadow ▸ opus-5-5·high')
   })
 
+  test("while the person holds the effort, the pick still shows Jev's latest effort, on every turn", { options: { low_model: 'sonnet' } }, async ($, on) => {
+    const HARDER = { answers: { effort: { type: 'score', score: 2.2 }, continuation: { type: 'noul', noul: 0.1 }, escalate: { type: 'noul', noul: 0.05 }, high_stakes: { type: 'noul', noul: 0.05 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? SURE_EASY : HARDER), model: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
+    expect(w.status.at(-1)).toBe('shadow ▸ sonnet-5-5·low')
+    await run($, 'effort', 'high')
+    await turn($, 'now make it thread-safe', 't2', { models: ['claude-opus-5-5'] })
+    expect(w.status.at(-1)).toBe('shadow ▸ sonnet-5-5·high')
+    expect((await command($, 'log 1')).text).toContain('opus-5-5·high  jev sonnet-5-5·high · shadow · effort pinned')
+    // A turn nobody typed asks nothing and shows the same.
+    await turn($, 'a task finished', 't3', { origin: 'task-notification', models: ['claude-opus-5-5'] })
+    expect(w.status.at(-1)).toBe('shadow ▸ sonnet-5-5·high')
+  })
+
   test('/jcGearbox and its log show what was sent, not what Jev picked', async ($, on) => {
     world(on, { reply: STRONG })
     await start($)
@@ -584,6 +599,15 @@ describe("the engine's own tier among the choices", () => {
     expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5'])
   })
 
+  test('a tier asked about and left out of the answer got no share of it', { options: { default_mode: 'auto', long_model: 'off' } }, async ($, on) => {
+    const noLong = { answers: { ...STRONG.answers, tier: { type: 'choice', choice: 'strong', probabilities: { low: 0.05, balanced: 0.05, strong: 0.9 }, confidence: 0.6 } } }
+    const w = world(on, { model: FABLE, reply: noLong })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: [FABLE] })
+    expect(Object.keys(w.asked[0].questions.tier.criteria)).toContain('long')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5'])
+  })
+
   test('a tier question is still only asked with two models to choose between', { options: { default_mode: 'auto', low_model: 'off', strong_model: 'off', long_model: 'off' } }, async ($, on) => {
     const w = world(on, { model: 'claude-opus-5-5', reply: sure(0, 0) })
     await start($)
@@ -769,6 +793,28 @@ describe('fork_follows_route', () => {
       { model: 'claude-sonnet-5-5', effort: 'medium' },
       { model: 'claude-sonnet-5-5', effort: 'medium' },
     ])
+  })
+
+  test('a fork made in a plan-mode turn follows the floored model, and keeps it once the next prompt leaves plan mode', FOLLOW, async ($, on) => {
+    const TO_HAIKU = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.85, balanced: 0.1, strong: 0.05 }, confidence: 0.8 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan' })
+    const fork = await spawnAgent($)
+    await drain($.turn.step(forkStep(fork)))
+    await turn($, 'ok, do it', 't3')
+    await drain($.turn.step({ ...forkStep(fork), index: 1 }))
+    expect(w.steps.map(s => s.model)).toEqual(['claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'claude-sonnet-5-5'])
+  })
+
+  test('under opusplan a fork made while planning stays on Opus, as the main loop does', FOLLOW, async ($, on) => {
+    const TO_HAIKU = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.85, balanced: 0.1, strong: 0.05 }, confidence: 0.8 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE), model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+    await start($)
+    await turn($, 'plan the rename', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+    await drain($.turn.step(forkStep(await spawnAgent($), 'claude-opus-5-5')))
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
   })
 
   test('off by default, a fork is left alone', AUTO, async ($, on) => {
