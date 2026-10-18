@@ -43,7 +43,7 @@ export type WorldOptions = {
   stepHold?: () => Promise<unknown> | undefined // a model request streams a chunk, then waits for the promise
   noUsage?: boolean // $.session.usage() fails, as on a Claude Code without it
   model?: string // the session's own model, as $.session.model() answers it (default sonnet)
-  settings?: Record<string, unknown> // what $.settings.read() answers (default none)
+  builtin?: (e: { command: string; args: string }) => string | undefined // what a built-in command answers (default nothing)
   noModel?: boolean // $.session.model() fails, as on a Claude Code that cannot tell
 }
 
@@ -143,7 +143,7 @@ export function world(on: On, o: WorldOptions = {}): World {
     if (o.noUsage) throw new Error('session.usage is not available')
     return { value: { startedAt: 0, context: {} as any, rateLimits: o.rateLimits ?? [] } }
   })
-  on('command.run', () => ({ text: '' })) // a built-in command, run by the engine
+  on('command.run', ($, e) => ({ text: o.builtin?.(e) ?? '' })) // a built-in command, run by the engine
   const agents: { id: string; description: string; type: string; status: 'running'; parentId?: string }[] = []
   on('agent.spawn', ($, e) => {
     const id = `agent-${agents.length + 1}`
@@ -152,7 +152,6 @@ export function world(on: On, o: WorldOptions = {}): World {
   })
   on('agent.list', () => ({ value: agents }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('settings.read', () => ({ value: o.settings ?? {} }))
   on('classic.SessionStart', () => ({}))
   on('classic.UserPromptSubmit', () => ({}))
   // As in the engine, the turn starts before the submit settles.

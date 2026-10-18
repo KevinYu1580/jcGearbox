@@ -128,10 +128,10 @@ Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the
 | `/model <name>` (even the model in use) or another model in the picker, after the first prompt | Stops changing the model for this session |
 | `/effort <level>` (even the level in use) or another effort in the picker, after the first prompt | Stops changing the effort for this session |
 | `/effort auto` (or `unset`) | Changes the effort again, going on from the level you last ran at (kept within `min_effort` and `max_effort`; after a number of your own, from no level in particular) |
-| Plan mode (including `opusplan`'s planning phase) | Those turns are never rewritten below the `balanced` tier (when one is set, and the API answers as it), nor below the model Claude Code is running itself (under `opusplan` and on the `haiku` alias it raises the model to plan, and the mod does not pull it back down); a pinned model that names no tier is kept. A first prompt sent in plan mode is measured from the model `/model` shows (Sonnet under `opusplan`, Haiku on the alias), not from the one raised to plan |
-| `/jcGearbox-auto` | Drops all of the above; the effort goes on from the level you last ran at |
+| Plan mode (including `opusplan`'s planning phase) | Those turns are never rewritten below the `balanced` tier (when one is set, and the API answers as it), nor below the model Claude Code is running itself (under `opusplan` and on the `haiku` alias it raises the model to plan, and the mod does not pull it back down); a pinned model that names no tier is kept. A first prompt sent in plan mode is measured from the model the session runs outside plan mode (Sonnet under `opusplan`, Haiku on the alias), not from the one raised to plan |
+| `/jcGearbox-auto` | Drops all of the above; the effort goes on from the level you last ran at, as after `/effort auto` |
 
-Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`. The same goes for picking Opus Plan Mode while its model of the moment is the one in use: type `/model opusplan`. An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
+Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`. The same goes for picking Opus Plan Mode while its model of the moment is the one in use: type `/model opusplan`. A `/model` the engine refuses (a hook blocked it, no 1M context) counts only where its answer says so; in the terminal it answers nothing, so the mod takes it for your choice all the same (`/jcGearbox-auto` undoes that). An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
 
 ## Commands
 
@@ -154,7 +154,7 @@ opus-5-5·high          auto: what was sent
 shadow ▸ opus-5-5·high   shadow: Jev's pick
 ```
 
-In auto it's the model and effort actually sent; in shadow it's Jev's pick, and the request goes as the session has it. An effort of `?` means the mod changed the model and Claude Code works out the effort for the new model: the mod set none, or set the level Claude Code already had, which Claude Code doesn't count as a change. Only a Jev error adds a note, `Jev <error>`; the rest (a pin, `/model`, an effort of your own, `ultracode`, `Jev unsure`) is in `/jcGearbox-log`, and `/jcGearbox-status` shows the whole state. The model and effort at the bottom of Claude Code are the session's own setting, which shadow sends as it is and auto may rewrite; in auto, the status line is what was actually sent.
+In auto it's the model and effort actually sent; in shadow it's Jev's pick, and the request goes as the session has it. An effort of `?` means the mod changed the model and Claude Code works out the effort for the new model: the mod set none, or set the level Claude Code already had, which Claude Code doesn't count as a change. Only a Jev error adds a note, `Jev <error>`; the rest (a pin, `/model`, an effort of your own, a command's own model, plan mode, `ultracode`, `Jev unsure`) is in `/jcGearbox-log`, and `/jcGearbox-status` shows the whole state. The model and effort at the bottom of Claude Code are the session's own setting, which shadow sends as it is and auto may rewrite; in auto, the status line is what was actually sent.
 
 ## Settings
 
@@ -164,7 +164,7 @@ Set them with `/jcGearbox-setup`, `/plugin configure jc-gearbox@jc-gearbox`, or 
 |---|---|---|
 | `api_key` | — | TypeSafe key; falls back to `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | `shadow`, `auto` or `off` for new sessions |
-| `low_model`, `balanced_model`, `strong_model`, `long_model` | `haiku`, `sonnet`, `opus`, `fable` | Alias (`opus[1m]` for 1M context) or full model id; `off` disables the tier |
+| `low_model`, `balanced_model`, `strong_model`, `long_model` | `haiku`, `sonnet`, `opus`, `fable` | Alias (`opus[1m]` for 1M context) or full model id; `off` disables the tier (Jev is still asked about it when the session's own model is of that tier, so that it can say "stay") |
 | `tier_upgrade_probability`, `tier_min_probability` | 0.5, 0.8 | Needed to move to a stronger, a weaker model |
 | `continuation_threshold` | 0.6 | Above this, a prompt keeps the last effort |
 | `effort_min_confidence` | 0.7 | Below this confidence, Jev's effort score isn't used and the last effort holds (a complaint or a risky task can still raise it); 0 always follows Jev |

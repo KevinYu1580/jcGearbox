@@ -60,6 +60,26 @@ describe('model switches', () => {
     expect((await command($, '')).text).toContain('your choice (/model)')
   })
 
+  test("a switch the engine refused, as its answer says, is no choice; one it made, as it says, is", AUTO, async ($, on) => {
+    const answers: Record<string, string> = {
+      opusplan: 'Model switch to claude-opus-5-5 was blocked by a PreModelSwitch hook',
+      'opusplan[1m]': "Sonnet with 1M context is not available on your account",
+      'sonnet[1m]': "Sonnet with 1M context is not available on your account",
+      sonnet: 'Set model to sonnet (claude-sonnet-5-5) and saved as your default for new sessions',
+    }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? SURE_EASY : CONTINUE), builtin: e => answers[e.args.trim()] })
+    await start($)
+    await command($, 'pin haiku')
+    await turn($, 'rename foo to bar', 't1')
+    for (const args of ['opusplan', 'opusplan[1m]', 'sonnet[1m]']) await run($, 'model', args)
+    await turn($, 'ok', 't2')
+    expect(w.steps.map(s => s.model)).toEqual([HAIKU, HAIKU])
+    await run($, 'model', 'sonnet')
+    await turn($, 'go on', 't3')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+    expect((await command($, '')).text).toContain('your choice (/model)')
+  })
+
   test('/effort naming a level pins the effort, even the level in use', AUTO, async ($, on) => {
     const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : { answers: { ...COMPLAINT.answers, escalate: { type: 'noul', noul: 0.05 } } }) })
     await start($)
@@ -168,6 +188,18 @@ describe('model switches', () => {
     await run($, 'effort', 'auto')
     await turn($, 'go on', 't3', { effort: 'medium' })
     expect(w.steps.map(s => s.effort)).toEqual(['low', 'max', 'max'])
+  })
+
+  test('with no level of the router yet, a level taken back at once goes on from the level the last turn ran at', AUTO, async ($, on) => {
+    // Jev down for the first turn (asked twice): the router holds no level, the engine's ran.
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE), failures: { 0: 500, 1: 500 } })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    expect((await command($, '')).text).toContain('effort: not set yet')
+    await run($, 'effort', 'max')
+    await run($, 'jcGearbox-auto')
+    await turn($, 'ok', 't2', { effort: 'max' })
+    expect(w.steps.map(s => s.effort)).toEqual(['high', 'high'])
   })
 
   test('/model or /effort before the first turn is only the starting point', AUTO, async ($, on) => {
@@ -292,8 +324,8 @@ describe('plan mode', () => {
   })
 
   describe('under opusplan', () => {
-    // The main loop's model, as the engine reports it, is Sonnet in either phase.
-    const OPUSPLAN = { model: 'claude-sonnet-5-5', settings: { model: 'opusplan' } }
+    // The main loop's model, as the engine reports it ($.session.model()), is Sonnet in either phase; Opus is the request's while planning.
+    const OPUSPLAN = { model: 'claude-sonnet-5-5' }
 
     test('the first prompt is measured from Sonnet, the main loop\'s model, while planning on Opus', AUTO, async ($, on) => {
       // Against a strong anchor, low and balanced would add up to the downgrade probability.
@@ -317,7 +349,7 @@ describe('plan mode', () => {
     })
 
     test('and from Sonnet[1m] under opusplan[1m]', AUTO, async ($, on) => {
-      world(on, { reply: easy, model: 'claude-sonnet-5-5[1m]', settings: { model: 'opusplan[1m]' } })
+      world(on, { reply: easy, model: 'claude-sonnet-5-5[1m]' })
       await start($)
       await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5[1m]'] })
       expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
@@ -331,7 +363,7 @@ describe('plan mode', () => {
     })
 
     test('an Opus session of its own, started over the setting, is measured from Opus', AUTO, async ($, on) => {
-      const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+      const w = world(on, { reply: easy, model: 'claude-opus-5-5' })
       await start($)
       await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
       await turn($, 'ok, do it', 't2', { models: ['claude-opus-5-5'] })
@@ -342,7 +374,7 @@ describe('plan mode', () => {
     test('a session on Fable over the setting is measured from Fable: it is not pulled down to Opus', AUTO, async ($, on) => {
       // Strong and long add up to the upgrade probability from balanced; from long, nothing moves.
       const LONGISH = { answers: { ...STRONG.answers, tier: { type: 'choice', choice: 'strong', probabilities: { low: 0.05, balanced: 0.05, strong: 0.6, long: 0.3 }, confidence: 0.6 } } }
-      const w = world(on, { reply: (body: any) => (body.questions.tier ? LONGISH : CONTINUE), model: FABLE, settings: { model: 'opusplan' } })
+      const w = world(on, { reply: (body: any) => (body.questions.tier ? LONGISH : CONTINUE), model: FABLE })
       await start($)
       await turn($, 'redesign the sync engine', 't1', { permissionMode: 'plan', models: [FABLE] })
       await turn($, 'ok, do it', 't2', { models: [FABLE] })
@@ -351,7 +383,7 @@ describe('plan mode', () => {
     })
 
     test('a session on Haiku over the setting is measured from Haiku: it still moves up', AUTO, async ($, on) => {
-      const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE), model: HAIKU, settings: { model: 'opusplan' } })
+      const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE), model: HAIKU })
       await start($)
       await turn($, 'rename foo to bar', 't1', { models: [HAIKU] })
       expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5'])

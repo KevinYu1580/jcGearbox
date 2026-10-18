@@ -128,10 +128,10 @@ flowchart TD
 | 第一個 prompt 之後打 `/model <名稱>`（即使是目前的 model），或在選單換成別的 model | 這個 session 不再改 model |
 | 第一個 prompt 之後打 `/effort <等級>`（即使是目前的等級），或在選單換成別的 effort | 這個 session 不再改 effort |
 | `/effort auto`（或 `unset`） | 重新開始調整 effort，從你最後實際跑的等級接下去（夾在 `min_effort` 與 `max_effort` 之間；你自己設的是數字時，不從任何等級接） |
-| 進入 plan mode（含 `opusplan` 的規劃階段） | 那些回合不改寫到比 `balanced` 弱（要有設 balanced tier，且 API 回得了它）、也不比 Claude Code 當下自己用的 model 弱的 model（`opusplan` 下和 `haiku` 別名的 session，Claude Code 自己會在規劃時升級，mod 不把它拉回來）；pin 到認不出 tier 的 model 時照用。第一個 prompt 在 plan mode 送出時，以 `/model` 顯示的 model 為基準（`opusplan` 下是 Sonnet，`haiku` 別名是 Haiku），不以規劃時升上去的 model 為基準 |
-| `/jcGearbox-auto` | 清掉以上全部；effort 從你最後實際跑的等級接下去 |
+| 進入 plan mode（含 `opusplan` 的規劃階段） | 那些回合不改寫到比 `balanced` 弱（要有設 balanced tier，且 API 回得了它）、也不比 Claude Code 當下自己用的 model 弱的 model（`opusplan` 下和 `haiku` 別名的 session，Claude Code 自己會在規劃時升級，mod 不把它拉回來）；pin 到認不出 tier 的 model 時照用。第一個 prompt 在 plan mode 送出時，以 session 在 plan mode 之外所用的 model 為基準（`opusplan` 下是 Sonnet，`haiku` 別名是 Haiku），不以規劃時升上去的 model 為基準 |
+| `/jcGearbox-auto` | 清掉以上全部；effort 從你最後實際跑的等級接下去，同 `/effort auto` |
 
-在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcGearbox-pin <model>`。在選單選 Opus Plan Mode 而它當下的 model 就是目前的 model 時也一樣：請打 `/model opusplan`。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。
+在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcGearbox-pin <model>`。在選單選 Opus Plan Mode 而它當下的 model 就是目前的 model 時也一樣：請打 `/model opusplan`。被 Claude Code 拒絕的 `/model`（hook 擋下、沒有 1M context）只在它的回覆說明時才不算；在終端機裡它什麼都不回，mod 仍當成你的選擇（`/jcGearbox-auto` 可以解掉）。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。
 
 ## 指令
 
@@ -154,7 +154,7 @@ opus-5-5·high          auto：實際送出的
 shadow ▸ opus-5-5·high   shadow：Jev 的選擇
 ```
 
-auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model，effort 由 Claude Code 依新 model 決定：mod 沒設 effort，或設的剛好是 Claude Code 原本的等級（Claude Code 不當成有改）。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、`ultracode`、`Jev unsure`）記在 `/jcGearbox-log`，完整狀態看 `/jcGearbox-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
+auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的選擇，請求照 session 原本的設定送出。effort 顯示 `?` 表示 mod 換了 model，effort 由 Claude Code 依新 model 決定：mod 沒設 effort，或設的剛好是 Claude Code 原本的等級（Claude Code 不當成有改）。只有 Jev 出錯時會加註 `Jev <錯誤>`；其他資訊（pin、`/model`、你自己設的 effort、指令自帶的 model、plan mode、`ultracode`、`Jev unsure`）記在 `/jcGearbox-log`，完整狀態看 `/jcGearbox-status`。Claude Code 底部顯示的 model 和 effort 是 session 自己的設定，shadow 照它送出，auto 可能改寫；auto 模式下實際送出的值以狀態列為準。
 
 ## 設定
 
@@ -164,7 +164,7 @@ auto 模式顯示實際送出的 model 和 effort；shadow 模式顯示 Jev 的�
 |---|---|---|
 | `api_key` | — | TypeSafe key；沒填時讀 `TYPESAFE_API_KEY` |
 | `default_mode` | `shadow` | 新 session 的模式：`shadow`、`auto` 或 `off` |
-| `low_model`、`balanced_model`、`strong_model`、`long_model` | `haiku`、`sonnet`、`opus`、`fable` | 別名（`opus[1m]` 是 1M context）或完整 model ID；填 `off` 停用該 tier |
+| `low_model`、`balanced_model`、`strong_model`、`long_model` | `haiku`、`sonnet`、`opus`、`fable` | 別名（`opus[1m]` 是 1M context）或完整 model ID；填 `off` 停用該 tier（session 自己的 model 屬於該 tier 時仍會問 Jev 它，好讓 Jev 能說「留下」） |
 | `tier_upgrade_probability`、`tier_min_probability` | 0.5、0.8 | 換成較強、較弱 model 需要的機率 |
 | `continuation_threshold` | 0.6 | 超過就算接續，沿用上一回合的 effort |
 | `effort_min_confidence` | 0.7 | Jev 對 effort 分數的信心度低於這個值時不採用它的分數，沿用上一回合的 effort（抱怨或高風險仍會調高）；設 0 就永遠照 Jev |

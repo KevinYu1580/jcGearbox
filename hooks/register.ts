@@ -372,7 +372,9 @@ export const register: Register = (on, options) => {
   // person's choice, which no switch reports; so is /model opusplan, whose
   // model of the moment may well be the one in use. A switch to another model
   // reports itself; a word that only shows something, the picker or a name
-  // that is no model or level is no choice. /effort auto (or unset) hands the
+  // that is no model or level is no choice, nor is a switch the engine
+  // refused (a hook blocked it, no 1M context), as far as its answer says so:
+  // the terminal's /model answers nothing. /effort auto (or unset) hands the
   // effort back.
   on('command.run', { command: ['model', 'effort'] }, async ($, e, next) => {
     const result = await next(e)
@@ -391,10 +393,11 @@ export const register: Register = (on, options) => {
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
     const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
+    const refused = e.command === 'model' && !!result?.text && !/(?:^|\n)Set model to /.test(result.text)
     const chosen =
       e.command === 'effort'
         ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg)
-        : OPUSPLAN.test(arg) || (!!named && !!engine && bare(named.id) === bare(engine))
+        : !refused && (OPUSPLAN.test(arg) || (!!named && !!engine && bare(named.id) === bare(engine)))
     if (chosen) {
       await change($, ctx, r => {
         if (!r.decided) return false
@@ -833,7 +836,7 @@ async function parentRecord($: EngineInterface, id: string): Promise<SessionReco
     const parent = await $.store.get(key)
     if (typeof parent !== 'string' || parent === id) return undefined
     const found = (await $.store.get(`session:${parent}`)) as SessionRecord | undefined
-    return found?.decided ? { ...found, rawEffort: undefined, rawModel: undefined, last: undefined } : undefined
+    return found?.decided ? { ...found, rawEffort: undefined, rawModel: undefined, ranPinned: undefined, last: undefined } : undefined
   }
   return undefined
 }

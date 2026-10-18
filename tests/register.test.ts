@@ -810,7 +810,8 @@ describe('fork_follows_route', () => {
 
   test('under opusplan a fork made while planning stays on Opus, as the main loop does', FOLLOW, async ($, on) => {
     const TO_HAIKU = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.85, balanced: 0.1, strong: 0.05 }, confidence: 0.8 } } }
-    const w = world(on, { reply: (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE), settings: { model: 'opusplan' } })
+    // The main loop's model, as the engine reports it, is Sonnet under opusplan; Opus is the request's while planning.
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE) })
     await start($)
     await turn($, 'plan the rename', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
     await drain($.turn.step(forkStep(await spawnAgent($), 'claude-opus-5-5')))
