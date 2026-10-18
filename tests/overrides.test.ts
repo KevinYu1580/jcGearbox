@@ -63,9 +63,9 @@ describe('model switches', () => {
   test("a switch the engine refused, as its answer says, is no choice; one it made, as it says, is", AUTO, async ($, on) => {
     const answers: Record<string, string> = {
       opusplan: 'Model switch to claude-opus-5-5 was blocked by a PreModelSwitch hook',
-      'opusplan[1m]': "Sonnet with 1M context is not available on your account",
-      'sonnet[1m]': "Sonnet with 1M context is not available on your account",
-      sonnet: 'Set model to sonnet (claude-sonnet-5-5) and saved as your default for new sessions',
+      'opusplan[1m]': 'Sonnet with 1M context is not available for your account',
+      'sonnet[1m]': 'Sonnet with 1M context is not available for your account',
+      sonnet: 'Model "sonnet[1m]" is restricted by your organization\'s settings. Using sonnet instead.\nSet model to sonnet (claude-sonnet-5-5) and saved as your default for new sessions',
     }
     const w = world(on, { reply: (body: any) => (body.questions.tier ? SURE_EASY : CONTINUE), builtin: e => answers[e.args.trim()] })
     await start($)

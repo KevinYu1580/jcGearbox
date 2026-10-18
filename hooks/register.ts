@@ -393,7 +393,8 @@ export const register: Register = (on, options) => {
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
     const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
-    const refused = e.command === 'model' && !!result?.text && !/(?:^|\n)Set model to /.test(result.text)
+    // Its answer, where there is one: "Set model to ...", after a substitution notice at most.
+    const refused = e.command === 'model' && !!result?.text && !/^(?:Model "[^\n]*\n)?Set model to /.test(result.text)
     const chosen =
       e.command === 'effort'
         ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg)

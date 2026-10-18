@@ -237,6 +237,19 @@ describe('a conversation that goes on under a new id', () => {
     expect((await command($, '')).text).toContain('effort: yours (you changed it)')
   })
 
+  test("/effort auto before a fork's first prompt keeps the router's level: the parent's last level is not the fork's", AUTO, async ($, on) => {
+    const w = world(on, { reply: answers(STRONG, CONTINUE) })
+    const REPLY2 = 'The tests for the sync engine now cover every peer path. '.repeat(6)
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { answer: REPLY })
+    await run($, 'effort', 'max')
+    await turn($, 'go on', 't2', { effort: 'max', answer: REPLY2 })
+    await goOn($, w, 'fork', forked(said('user', 'go on'), said('assistant', REPLY2), said('user', 'now the tests')))
+    await run($, 'effort', 'auto')
+    await turn($, 'now the tests', 't3', { effort: 'medium' })
+    expect(w.steps.at(-1)).toEqual({ model: 'claude-opus-5-5', effort: 'high' })
+  })
+
   test("the person's switch in the picker before a fork's first prompt is theirs", AUTO, async ($, on) => {
     const w = world(on, { reply: answers(STRONG, CONTINUE) })
     await start($)
