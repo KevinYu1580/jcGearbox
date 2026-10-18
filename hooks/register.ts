@@ -4,7 +4,7 @@ import { JEV_URL, buildRequest, clip, parseAnswers, redact } from './jev.ts'
 import type { JevRequest, JevResult } from './jev.ts'
 import { newestCatalogFile, resolveModel, surfaceOf, versionAtLeast } from './models.ts'
 import type { Resolved } from './models.ts'
-import { EFFORTS, TIERS, decideEffort, defaultEffort, effortFor, isEffort, pickModel } from './policy.ts'
+import { EFFORTS, TIERS, decideEffort, defaultEffort, effortFor, isEffort, pickModel, tierRank } from './policy.ts'
 import type { Effort, Tier } from './policy.ts'
 
 const MIN_VERSION = '2.1.286'
@@ -113,6 +113,8 @@ type Ctx = {
   baselined: Set<string> // sessions whose engine effort this process has seen
   engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
   forks: Map<string, string | null> // each subagent seen: the model a fork of the main conversation started on, else null
+  planMode: Map<string, boolean> // each session's permission mode at its last prompt: in plan mode or not
+  opusplan?: boolean // the session's model setting is opusplan: Opus while planning, Sonnet while executing
   failure?: Failure // the main loop's turn that died of an API error, as far as its two reports are in
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
@@ -134,6 +136,7 @@ export const register: Register = (on, options) => {
     baselined: new Set(),
     engineModels: new Map(),
     forks: new Map(),
+    planMode: new Map(),
     queue: Promise.resolve(),
   }
   const { opt, submitted, turns } = ctx
@@ -152,6 +155,11 @@ export const register: Register = (on, options) => {
       const id = await $.session.id()
       const own = await sessionModel($, ctx, id)
       if (own) ctx.engineModels.set(id, own)
+      try {
+        ctx.opusplan = (await $.settings.read()).model === 'opusplan'
+      } catch {
+        // a Claude Code that cannot tell
+      }
     }
     await $.command.register({
       name: 'jcGearbox',
@@ -253,8 +261,10 @@ export const register: Register = (on, options) => {
       turn.ownEffort = true
     }
 
-    const { apply, model } = turn.plan
+    const { apply } = turn.plan
     const effort = turn.ownEffort ? undefined : turn.plan.effort
+    const session = await $.session.id()
+    const model = floored(ctx, session, ctx.resolved?.session === session ? ctx.resolved.tiers : {}, turn.plan.model, e.model)
     const rewritesModel = apply && model !== undefined && movesTo(model, e.model)
     const result =
       !rewritesModel && !(apply && effort)
@@ -348,6 +358,13 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // The permission mode each prompt is sent in: in plan mode the engine runs a
+  // stronger model of its own, which the router's rewrite respects (floored).
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    ctx.planMode.set(await $.session.id(), e.permission_mode === 'plan')
+    return next(e)
+  })
+
   // /model naming the model in use, or /effort naming a level, is the
   // person's choice, which no switch reports. A switch to another model reports
   // itself; a word that only shows something, the picker or a name that is no
@@ -358,9 +375,11 @@ export const register: Register = (on, options) => {
     if (!arg || ctx.disabled) return result
     const [id] = await joinedRecord($, ctx)
     if (e.command === 'effort' && /^(?:auto|unset)$/i.test(arg)) {
-      // Claude Code drops its own level: the next turn's is a new baseline.
+      // Claude Code drops its own level: the next turn's is a new baseline,
+      // and the router goes on from the level the person last ran at.
       await change($, ctx, r => {
         if (r.rawEffort === undefined && !r.effortPinned) return false
+        if (r.effortPinned && isEffort(r.rawEffort)) r.effort = r.rawEffort
         delete r.rawEffort
         delete r.effortPinned
       })
@@ -531,6 +550,14 @@ async function plan(
   }
   const { tiers } = await resolution($, ctx, id)
   const offered = TIERS.filter(t => tiers[t])
+  // The tiers the session's own model stands for (a command's own model is
+  // not the session's): the first turn's pick is made relative to them.
+  const anchor = anchorTiers(ctx, turn.command ? ((await sessionModel($, ctx, id)) ?? model) : model, tiers)
+  // The engine's tier is always among the choices, with or without a model of
+  // its own, so that Jev can give "stay on this model" its share: asked about
+  // weaker tiers only, its answer would add up to one below the engine and
+  // the session would move down whatever the task.
+  const choices = TIERS.filter(t => offered.includes(t) || anchor.includes(t))
   let asked: { result?: JevResult; error?: string } | undefined
   let jevMs: number | undefined
   if (turn.isUser) {
@@ -539,7 +566,7 @@ async function plan(
       jevModel: opt.jevModel,
       prompt: turn.text,
       isFirstTurn: first,
-      tiers: distinct >= 2 ? offered : undefined,
+      tiers: distinct >= 2 ? choices : undefined,
       previousPrompt: joined.prompt,
       replyTail: opt.sendAssistantTail ? joined.replyTail?.slice(-opt.tailChars) : undefined,
       // A Bedrock ARN names the AWS account: what follows it is enough.
@@ -586,8 +613,9 @@ async function plan(
     if (asked) {
       decided = decideEffort({
         signals: asked.result?.signals,
-        // Before the router has decided an effort, the last turn ran at the engine's.
-        previous: r.effort ?? (asked.result && isEffort(r.rawEffort) ? r.rawEffort : undefined),
+        // The effort the last turn ran at: the person's own while they hold it
+        // (lastEffort), else the router's; before either, the engine's.
+        previous: isEffort(lastEffort(r)) ? (lastEffort(r) as Effort) : asked.result && isEffort(r.rawEffort) ? r.rawEffort : undefined,
         isFirstTurn: first,
         threshold: opt.signalThreshold,
         continuationThreshold: opt.continuationThreshold,
@@ -601,15 +629,19 @@ async function plan(
         r.decided = true
         const ids: Partial<Record<Tier, string>> = {}
         for (const t of offered) ids[t] = tiers[t]?.id
+        // A tier asked about and left out of the answer got no share of it.
+        const given = asked.result?.tierProbabilities
         r.model = pickModel({
-          probabilities: asked.result?.tierProbabilities,
+          probabilities: given && Object.fromEntries(choices.map(t => [t, given[t] ?? 0])),
           models: ids,
-          engine: engineTiers(turn.command ? (own ?? model) : model, tiers), // a command's own model is not the session's
+          engine: anchor,
           upgrade: opt.tierUpgradeProbability,
           downgrade: opt.tierMinProbability,
         })
       }
-      if (decided.effort) r.effort = decided.effort
+      // While the person holds the effort, the router's own idea of it is not
+      // written down: the next turn goes on from the level that actually ran.
+      if (decided.effort && !r.effortPinned) r.effort = decided.effort
       r.prompt = clip(redact(turn.text), CONTEXT_CHARS)
       delete r.replyTail // the reply to this prompt, if it shows one, takes its place
     }
@@ -707,6 +739,29 @@ function engineTiers(model: string, tiers: Tiers): Tier[] {
   if (named.length > 0) return named
   const tier = familyTier(id)
   return tier ? [tier] : []
+}
+
+// The tiers a session's picks are made relative to. Under opusplan the engine
+// runs Opus while planning and Sonnet while executing, so the model of the
+// moment says nothing of the person's choice: their choice is balanced.
+function anchorTiers(ctx: Ctx, model: string, tiers: Tiers): Tier[] {
+  return ctx.opusplan && tiers.balanced ? ['balanced'] : engineTiers(model, tiers)
+}
+
+// The highest rung the model stands on, or -1 for one that names no tier.
+function rankOf(model: string, tiers: Tiers): number {
+  const ranks = engineTiers(model, tiers).map(tierRank)
+  return ranks.length > 0 ? Math.max(...ranks) : -1
+}
+
+// In plan mode the engine itself runs a stronger model (opusplan's Opus, and
+// Sonnet for a session on Haiku): the router then rewrites to nothing weaker
+// than the balanced tier, and never pulls a model the engine raised back down.
+function floored(ctx: Ctx, session: string, tiers: Tiers, planned: string | undefined, engineModel: string): string | undefined {
+  if (planned === undefined || ctx.planMode.get(session) !== true) return planned
+  const balanced = tiers.balanced?.id
+  const target = balanced && rankOf(planned, tiers) >= 0 && rankOf(planned, tiers) < tierRank('balanced') ? balanced : planned
+  return rankOf(engineModel, tiers) > rankOf(target, tiers) ? undefined : target
 }
 
 // The model the session runs on: a pin, else the first turn's choice unless

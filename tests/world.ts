@@ -43,6 +43,7 @@ export type WorldOptions = {
   stepHold?: () => Promise<unknown> | undefined // a model request streams a chunk, then waits for the promise
   noUsage?: boolean // $.session.usage() fails, as on a Claude Code without it
   model?: string // the session's own model, as $.session.model() answers it (default sonnet)
+  settings?: Record<string, unknown> // what $.settings.read() answers (default none)
 }
 
 export const FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -147,7 +148,9 @@ export function world(on: On, o: WorldOptions = {}): World {
   })
   on('agent.list', () => ({ value: agents }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('settings.read', () => ({ value: o.settings ?? {} }))
   on('classic.SessionStart', () => ({}))
+  on('classic.UserPromptSubmit', () => ({}))
   // As in the engine, the turn starts before the submit settles.
   on('prompt.submit', async ($, e) => {
     const begin = starting
@@ -217,6 +220,7 @@ export type TurnOptions = {
   reason?: string // why the turn ended (default 'answer'; 'error' when an API error ended it)
   failure?: string // why an API error ended it, as StopFailure says (default 'unknown')
   failureAfter?: boolean // StopFailure comes after turn.complete, not before
+  permissionMode?: string // the permission mode the prompt is sent in, as UserPromptSubmit stamps it (default 'default')
 }
 
 // The turn.start the next prompt.submit fires on its way down.
@@ -226,6 +230,8 @@ export async function turn($: any, text: string, turnId: string, o: TurnOptions 
   const begin = () => $.turn.start({ text: o.startText ?? text, turnId })
   if (o.submit === false) await begin()
   else {
+    // As in the engine: the settings hook event stamps the prompt's permission mode, then the submit settles.
+    await $.classic.UserPromptSubmit({ prompt: text, permission_mode: o.permissionMode ?? 'default' })
     starting = begin
     await $.prompt.submit({ text, wait: false, origin: { kind: o.origin ?? 'sdk' } })
   }

@@ -209,6 +209,21 @@ describe('pickModel', () => {
     expect(pick({ balanced: 0.1, long: 0.9 }, ['balanced'], models)).toBe('claude-opus-5-5')
     expect(pick(undefined, ['balanced'])).toBeUndefined()
   })
+
+  test("asked about no tier of the engine's, the answer moves the session nowhere", () => {
+    // Two tiers on Bedrock, the session on Opus: the answer adds up to one below it.
+    const two = { low: 'arn:aws:bedrock:us-east-1:1:inference-profile/us.anthropic.claude-haiku-5-5-v1:0', balanced: 'arn:aws:bedrock:us-east-1:1:inference-profile/us.anthropic.claude-sonnet-5-5-v1:0' }
+    expect(pick({ low: 0.05, balanced: 0.95 }, ['strong'], two)).toBeUndefined()
+    expect(pick({ low: 0.9, balanced: 0.1 }, ['strong'], two)).toBeUndefined()
+    // The long tier off, the session on Fable.
+    const three = { low: 'claude-haiku-5-5', balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' }
+    expect(pick({ low: 0.05, balanced: 0.05, strong: 0.9 }, ['long'], three)).toBeUndefined()
+    // And the same above the engine: the answer adds up to one above it.
+    expect(pick({ balanced: 0.3, strong: 0.7 }, ['low'], { balanced: 'claude-sonnet-5-5', strong: 'claude-opus-5-5' })).toBeUndefined()
+    // Given its share, the engine's tier is compared against like any other.
+    expect(pick({ low: 0.05, balanced: 0.05, strong: 0.4, long: 0.5 }, ['long'], three)).toBeUndefined()
+    expect(pick({ low: 0.05, balanced: 0.05, strong: 0.8, long: 0.1 }, ['long'], three)).toBe('claude-opus-5-5')
+  })
 })
 
 describe('effortFor', () => {

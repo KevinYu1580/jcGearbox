@@ -104,6 +104,7 @@ export function decideEffort(input: {
 
 // Tiers weakest first.
 const LADDER: readonly Tier[] = ['low', 'balanced', 'strong', 'long']
+export const tierRank = (tier: Tier): number => LADDER.indexOf(tier)
 
 // The model the first turn moves the session to, or none to stay on the
 // engine's. Moving up to a tier takes `upgrade` of Jev's probability that the
@@ -128,6 +129,9 @@ export function pickModel(input: {
   }
 
   if (engine.length > 0) {
+    // Asked about no tier of the engine's, Jev's answer adds up to one on one
+    // side of it: it could not say "stay", so nothing is compared against it.
+    if (!engine.some(t => probabilities[t] !== undefined)) return undefined
     const ranks = engine.map(t => LADDER.indexOf(t))
     const lo = Math.min(...ranks)
     const hi = Math.max(...ranks)

@@ -562,6 +562,37 @@ describe('/jcGearbox', () => {
   })
 })
 
+describe("the engine's own tier among the choices", () => {
+  const FABLE = 'claude-fable-5-1'
+  const sure = (long: number, strong: number) => ({
+    answers: { ...STRONG.answers, tier: { type: 'choice', choice: 'strong', probabilities: { low: 0.05, balanced: 0.05, strong, long }, confidence: 0.6 } },
+  })
+
+  test('with the long tier off, a session on Fable is asked about long too, and stays when Jev gives it its share', { options: { default_mode: 'auto', long_model: 'off' } }, async ($, on) => {
+    const w = world(on, { model: FABLE, reply: sure(0.5, 0.4) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: [FABLE] })
+    expect(Object.keys(w.asked[0].questions.tier.criteria)).toEqual(['strong', 'balanced', 'low', 'long'])
+    expect(w.steps.map(s => s.model)).toEqual([FABLE])
+    expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+  })
+
+  test('and still moves down once a weaker tier clears the downgrade probability', { options: { default_mode: 'auto', long_model: 'off' } }, async ($, on) => {
+    const w = world(on, { model: FABLE, reply: sure(0.1, 0.8) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: [FABLE] })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5'])
+  })
+
+  test('a tier question is still only asked with two models to choose between', { options: { default_mode: 'auto', low_model: 'off', strong_model: 'off', long_model: 'off' } }, async ($, on) => {
+    const w = world(on, { model: 'claude-opus-5-5', reply: sure(0, 0) })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: ['claude-opus-5-5'] })
+    expect(w.asked[0].questions.tier).toBeUndefined()
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5'])
+  })
+})
+
 describe('/jcGearbox-status off a first-party login', () => {
   test('tells a tier set to off from an alias that cannot resolve', { options: { long_model: 'off' } }, async ($, on) => {
     world(on, { thirdParty: true })

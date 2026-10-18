@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, CONTINUE, EASY, STRONG, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
+import { AUTO, CONTINUE, EASY, STRONG, SURE_EASY, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
 
 const HAIKU = 'claude-haiku-4-5-20251001'
 
@@ -87,8 +87,24 @@ describe('model switches', () => {
     await turn($, 'ok', 't2')
     await run($, 'effort', 'unset')
     await turn($, 'go on', 't3', { effort: 'medium' })
-    expect(w.steps.map(s => s.effort)).toEqual(['low', 'high', 'low'])
+    // The continuation goes on from the level the person ran at, not from the router's idea of it.
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'high', 'high'])
     expect((await command($, '')).text).not.toContain('effort: yours')
+  })
+
+  test("while the person holds the effort, the router's own idea of it is not kept", AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', 'max')
+    await turn($, 'ok', 't2', { effort: 'max' })
+    await turn($, 'and the docs', 't3', { effort: 'max' })
+    expect(w.asked.at(-1).state.previous.effort).toBe('max')
+    expect((await command($, '')).text).toContain('effort: yours (you changed it)')
+    await run($, 'effort', 'auto')
+    await turn($, 'go on', 't4', { effort: 'medium' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'max', 'max', 'max'])
+    expect((await command($, '')).text).toContain('effort: max')
   })
 
   test('/model or /effort before the first turn is only the starting point', AUTO, async ($, on) => {
@@ -118,6 +134,44 @@ describe('model switches', () => {
     await switchModel($, 'claude-sonnet-5-5', HAIKU, 'auto')
     await turn($, 'ok', 't2', { models: [HAIKU] })
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+  })
+})
+
+describe('plan mode', () => {
+  // Jev sure that Haiku will do: low alone clears the downgrade probability.
+  const TO_HAIKU = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'low', probabilities: { low: 0.85, balanced: 0.1, strong: 0.05 }, confidence: 0.8 } } }
+  const toHaiku = (body: any) => (body.questions.tier ? TO_HAIKU : CONTINUE)
+  const easy = (body: any) => (body.questions.tier ? SURE_EASY : CONTINUE)
+
+  test('a session routed to Haiku plans on the balanced tier, as the engine would, and executes on Haiku again', AUTO, async ($, on) => {
+    const w = world(on, { reply: toHaiku })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan' })
+    await turn($, 'ok, do it', 't3')
+    expect(w.steps.map(s => s.model)).toEqual([HAIKU, 'claude-sonnet-5-5', HAIKU])
+  })
+
+  test('a model the engine raised for planning is not pulled back down', AUTO, async ($, on) => {
+    const w = world(on, { reply: toHaiku })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'auto')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+    await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
+    await turn($, 'ok, do it', 't3')
+    expect(w.steps.map(s => s.model)).toEqual([HAIKU, 'claude-opus-5-5', HAIKU])
+  })
+
+  test('under opusplan the tiers are anchored on balanced, whichever phase the first prompt is sent in', AUTO, async ($, on) => {
+    // Planning on Opus: against a strong anchor, low and balanced would add up to the downgrade probability.
+    const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+    await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
+    await turn($, 'ok, do it', 't2')
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+    expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
   })
 
   test("a resume restoring the model is not the person's switch", AUTO, async ($, on) => {
