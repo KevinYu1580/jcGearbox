@@ -273,6 +273,49 @@ describe('plan mode', () => {
     expect(w.steps).toEqual([{ model: HAIKU, effort: 'high' }, { model: 'claude-opus-5-5', effort: 'low' }, { model: HAIKU, effort: 'high' }])
   })
 
+  test('a session the router moved down from Opus plans on its routed model: the engine raised nothing', AUTO, async ($, on) => {
+    const TO_SONNET = { answers: { ...SURE_EASY.answers, tier: { type: 'choice', choice: 'balanced', probabilities: { low: 0.05, balanced: 0.85, strong: 0.05, long: 0.05 }, confidence: 0.8 } } }
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? TO_SONNET : CONTINUE), model: 'claude-opus-5-5' })
+    await start($)
+    await turn($, 'rename foo to bar', 't1', { models: ['claude-opus-5-5'] })
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+    await turn($, 'ok, do it', 't3', { models: ['claude-opus-5-5'] })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    expect((await command($, 'log 2')).text).not.toContain('plan mode')
+  })
+
+  test('a model pinned below the session of its own is kept in plan mode', AUTO, async ($, on) => {
+    const w = world(on, { reply: toHaiku, model: FABLE })
+    await start($)
+    await command($, 'pin opus')
+    await turn($, 'rename foo to bar', 't1', { models: [FABLE] })
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan', models: [FABLE] })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
+  })
+
+  test('/model naming the model it shows is the person\'s choice in plan mode too, though the engine plans on a stronger one', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, model: HAIKU })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: [HAIKU] })
+    await switchModel($, HAIKU, 'claude-sonnet-5-5', 'auto')
+    await turn($, 'plan the next step', 't2', { permissionMode: 'plan', models: ['claude-sonnet-5-5'] })
+    await run($, 'model', 'haiku')
+    await turn($, 'plan it again', 't3', { permissionMode: 'plan', models: ['claude-sonnet-5-5'] })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
+    expect((await command($, '')).text).toContain('model: your choice (/model)')
+  })
+
+  test('/model naming the model the engine plans on is the person\'s choice too', AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue, model: HAIKU })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1', { models: [HAIKU] })
+    await switchModel($, HAIKU, 'claude-sonnet-5-5', 'auto')
+    await turn($, 'plan the next step', 't2', { permissionMode: 'plan', models: ['claude-sonnet-5-5'] })
+    await run($, 'model', 'sonnet')
+    await turn($, 'plan it again', 't3', { permissionMode: 'plan', models: ['claude-sonnet-5-5'] })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
+  })
+
   test('in shadow nothing is floored, so the log says nothing of plan mode', {}, async ($, on) => {
     const w = world(on, { reply: toHaiku })
     await start($)
@@ -367,7 +410,8 @@ describe('plan mode', () => {
       await start($)
       await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
       await turn($, 'ok, do it', 't2', { models: ['claude-opus-5-5'] })
-      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+      // Plan mode raised nothing here: the planning turn goes on the routed model too.
+      expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
       expect((await command($, '')).text).toContain('model: claude-sonnet-5-5 (chosen on the first turn)')
     })
 

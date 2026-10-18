@@ -238,7 +238,9 @@ export const register: Register = (on, options) => {
       if (!fork || fork.model !== e.model || !(await apiKey($, opt))) return yield* next(e)
       const [session, r] = await serial(ctx, () => record($))
       const routed = (r.mode ?? opt.defaultMode) === 'auto' ? current(r) : undefined
-      const model = floored(fork.inPlan, ctx.resolved?.session === session ? ctx.resolved.tiers : {}, routed, e.model, r.badModels)
+      const tiers = ctx.resolved?.session === session ? ctx.resolved.tiers : {}
+      const raised = raisedForPlan(e.model, await sessionBase($, fork.inPlan, e.model, tiers), tiers)
+      const model = floored(fork.inPlan, tiers, routed, e.model, raised, r.badModels)
       return yield* next(model && movesTo(model, e.model) ? { ...e, model } : e)
     }
     if (ctx.disabled) return yield* next(e)
@@ -392,13 +394,16 @@ export const register: Register = (on, options) => {
     }
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
     const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
+    // In plan mode the engine may plan on a stronger model than the main
+    // loop's, which /model shows: naming either is no switch it reports.
+    const shown = e.command === 'model' && ctx.planMode.has(id) ? await mainLoopModel($) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
     // Its answer, where there is one: "Set model to ...", after a substitution notice at most.
     const refused = e.command === 'model' && !!result?.text && !/^(?:Model "[^\n]*\n)?Set model to /.test(result.text)
     const chosen =
       e.command === 'effort'
         ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg)
-        : !refused && (OPUSPLAN.test(arg) || (!!named && !!engine && bare(named.id) === bare(engine)))
+        : !refused && (OPUSPLAN.test(arg) || (!!named && [engine, shown].some(m => !!m && bare(named.id) === bare(m))))
     if (chosen) {
       await change($, ctx, r => {
         if (!r.decided) return false
@@ -555,19 +560,21 @@ async function plan(
   if (mode === 'shadow') early({ apply: false })
   const { tiers } = await resolution($, ctx, id)
   const inPlan = ctx.planMode.has(id)
+  // A command's own model is not the session's.
+  const own = turn.command ? await sessionModel($, ctx, id) : undefined
+  const base = await sessionBase($, inPlan, own ?? model, tiers)
+  const raised = raisedForPlan(model, base, tiers)
   if (mode !== 'shadow' && turn.isUser && !first && !turn.command) {
-    const routed = floored(inPlan, tiers, current(joined), model, joined.badModels)
+    const routed = floored(inPlan, tiers, current(joined), model, raised, joined.badModels)
     if (joined.effortPinned || !takesEffort(routed ?? model)) early({ apply: true, model: routed })
   }
   const offered = TIERS.filter(t => tiers[t])
-  // A command's own model is not the session's.
-  const own = turn.command ? await sessionModel($, ctx, id) : undefined
   // The tiers the session's own model stands for: the first turn's pick is
   // made relative to them. The engine's tier is always among the choices,
   // with or without a model of its own, so that Jev can give "stay on this
   // model" its share: asked about weaker tiers only, its answer would add up
   // to one below the engine and the session would move down whatever the task.
-  const anchor = first ? engineTiers(await sessionBase($, inPlan, own ?? model, tiers), tiers) : []
+  const anchor = first ? engineTiers(base ?? own ?? model, tiers) : []
   const choices = TIERS.filter(t => offered.includes(t) || anchor.includes(t))
   let asked: { result?: JevResult; error?: string } | undefined
   let jevMs: number | undefined
@@ -660,7 +667,7 @@ async function plan(
     }
 
     // The model the request goes on: the session's, floored in plan mode.
-    const chosen = ownModel ? undefined : floored(inPlan, tiers, current(r), model, r.badModels)
+    const chosen = ownModel ? undefined : floored(inPlan, tiers, current(r), model, raised, r.badModels)
     // Said only where it changed what runs: an effort of the router's, on a model that takes one.
     const unsure = !!decided?.unsure && !r.effortPinned && takesEffort(chosen ?? model)
     // A command with no baseline to tell its own effort from the session's takes
@@ -762,15 +769,28 @@ function engineTiers(model: string, tiers: Tiers): Tier[] {
 // plan mode. In plan mode the engine itself runs a stronger one (Opus under
 // opusplan, Sonnet for a session on the haiku alias), while the main loop's
 // model, as /model shows it, still names the one chosen: Sonnet under opusplan,
-// Haiku on the alias. Where the engine cannot tell, the model of the moment.
-async function sessionBase($: EngineInterface, inPlan: boolean, model: string, tiers: Tiers): Promise<string> {
+// Haiku on the alias. None where the engine cannot tell.
+async function sessionBase($: EngineInterface, inPlan: boolean, model: string, tiers: Tiers): Promise<string | undefined> {
   if (!inPlan) return model
+  const own = await mainLoopModel($)
+  if (!own) return undefined
+  return rankOf(own, tiers) >= 0 && rankOf(own, tiers) < rankOf(model, tiers) ? own : model
+}
+
+// The main loop's model, as /model shows it.
+async function mainLoopModel($: EngineInterface): Promise<string | undefined> {
   try {
-    const own = await $.session.model()
-    return own && rankOf(own, tiers) >= 0 && rankOf(own, tiers) < rankOf(model, tiers) ? own : model
+    return await $.session.model()
   } catch {
-    return model // a Claude Code that cannot tell
+    return undefined // a Claude Code that cannot tell
   }
+}
+
+// Whether plan mode raised the session to the model the engine runs: one
+// stronger than the session's own outside plan mode. Where the engine cannot
+// tell, it may have.
+function raisedForPlan(model: string, base: string | undefined, tiers: Tiers): boolean {
+  return base === undefined || rankOf(model, tiers) > rankOf(base, tiers)
 }
 
 // The highest rung the model stands on, or -1 for one that names no tier.
@@ -782,14 +802,18 @@ function rankOf(model: string, tiers: Tiers): number {
 // In plan mode the engine itself runs a stronger model (opusplan's Opus, and
 // Sonnet for a session on Haiku): the router then rewrites to nothing weaker
 // than the balanced tier (one the API answers as), and never pulls a model the
-// engine raised back down. A model that names no tier is below nothing.
-function floored(inPlan: boolean, tiers: Tiers, planned: string | undefined, engineModel: string, bad: readonly string[] = []): string | undefined {
+// engine raised back down. A session of its own on a stronger model was raised
+// by nothing: it plans on the routed model, unless that stays below the
+// balanced tier for want of a balanced model. A model that names no tier is
+// below nothing.
+function floored(inPlan: boolean, tiers: Tiers, planned: string | undefined, engineModel: string, raised: boolean, bad: readonly string[] = []): string | undefined {
   if (planned === undefined || !inPlan) return planned
   const rank = rankOf(planned, tiers)
   if (rank < 0) return planned
   const balanced = tiers.balanced && !bad.includes(tiers.balanced.id) ? tiers.balanced.id : undefined
   const target = balanced && rank < tierRank('balanced') ? balanced : planned
-  return rankOf(engineModel, tiers) > rankOf(target, tiers) ? undefined : target
+  const stands = raised || rankOf(target, tiers) < tierRank('balanced')
+  return stands && rankOf(engineModel, tiers) > rankOf(target, tiers) ? undefined : target
 }
 
 // The model the session runs on: a pin, else the first turn's choice unless

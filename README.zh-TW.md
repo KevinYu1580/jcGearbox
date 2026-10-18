@@ -128,7 +128,7 @@ flowchart TD
 | 第一個 prompt 之後打 `/model <名稱>`（即使是目前的 model），或在選單換成別的 model | 這個 session 不再改 model |
 | 第一個 prompt 之後打 `/effort <等級>`（即使是目前的等級），或在選單換成別的 effort | 這個 session 不再改 effort |
 | `/effort auto`（或 `unset`） | 重新開始調整 effort，從你最後實際跑的等級接下去（夾在 `min_effort` 與 `max_effort` 之間；你自己設的是數字時，不從任何等級接） |
-| 進入 plan mode（含 `opusplan` 的規劃階段） | 那些回合不改寫到比 `balanced` 弱（要有設 balanced tier，且 API 回得了它）、也不比 Claude Code 當下自己用的 model 弱的 model（`opusplan` 下和 `haiku` 別名的 session，Claude Code 自己會在規劃時升級，mod 不把它拉回來）；pin 到認不出 tier 的 model 時照用。第一個 prompt 在 plan mode 送出時，以 session 在 plan mode 之外所用的 model 為基準（`opusplan` 下是 Sonnet，`haiku` 別名是 Haiku），不以規劃時升上去的 model 為基準 |
+| 進入 plan mode（含 `opusplan` 的規劃階段） | 那些回合不改寫到比 `balanced` 弱（要有設 balanced tier，且 API 回得了它；沒有時，不比 Claude Code 當下自己用的 model 弱）、也不比 Claude Code 為了規劃而升上去的 model 弱的 model（`opusplan` 下的 Opus、`haiku` 別名的 Sonnet：mod 不把它拉回來）。session 自己以較強的 model（Opus、Fable）啟動、被 mod 降下來時，只要 mod 選的是 `balanced` 或更強，規劃就用 mod 選的 model；pin 到認不出 tier 的 model 時照用。第一個 prompt 在 plan mode 送出時，以 session 在 plan mode 之外所用的 model 為基準（`opusplan` 下是 Sonnet，`haiku` 別名是 Haiku），不以規劃時升上去的 model 為基準。在 plan mode 裡，`/model` 指名它顯示的 model 或 Claude Code 規劃時用的 model，都算你的選擇 |
 | `/jcGearbox-auto` | 清掉以上全部；effort 從你最後實際跑的等級接下去，同 `/effort auto` |
 
 在選單選回 session 原本的 model，Claude Code 不當成有換，mod 偵測不到，會繼續用它自己選的 model：請打 `/model <名稱>`，或用 `/jcGearbox-pin <model>`。在選單選 Opus Plan Mode 而它當下的 model 就是目前的 model 時也一樣：請打 `/model opusplan`。被 Claude Code 拒絕的 `/model`（hook 擋下、沒有 1M context）只在它的回覆說明時才不算；在終端機裡它什麼都不回，mod 仍當成你的選擇（`/jcGearbox-auto` 可以解掉）。resume 或重載 plugin 之後、送出下一個 prompt 之前在選單改的 effort 也偵測不到：請用 `/effort <等級>`。
