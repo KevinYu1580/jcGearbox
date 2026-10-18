@@ -44,6 +44,7 @@ export type WorldOptions = {
   noUsage?: boolean // $.session.usage() fails, as on a Claude Code without it
   model?: string // the session's own model, as $.session.model() answers it (default sonnet)
   settings?: Record<string, unknown> // what $.settings.read() answers (default none)
+  noModel?: boolean // $.session.model() fails, as on a Claude Code that cannot tell
 }
 
 export const FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
@@ -102,7 +103,10 @@ export function world(on: On, o: WorldOptions = {}): World {
   const catalog = o.catalog === undefined ? CATALOG : o.catalog
   const dir = `${env.CLAUDE_CONFIG_DIR ?? `${env.HOME}/.claude`}/cache/model-catalog`
   on('session.id', () => ({ value: w.session }))
-  on('session.model', () => ({ value: w.model }))
+  on('session.model', () => {
+    if (o.noModel) throw new Error('session.model is not available')
+    return { value: w.model }
+  })
   on('session.messages', () => ({ value: w.messages }))
   on('session.version', () => ({ value: { version: o.version ?? '2.1.286', base: o.version ?? '2.1.286' } }))
   on('session.authorize', () => ({ value: o.thirdParty ? null : { handle: 'h', kind: 'bearer' as const } }))

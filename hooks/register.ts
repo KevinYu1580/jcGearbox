@@ -20,7 +20,8 @@ const SDK_ENTRYPOINTS = ['sdk-cli', 'sdk-ts', 'sdk-py']
 const USAGE = 'Usage: /jcGearbox [status | auto | shadow | off | on | pin <model> | log [n] | stats], or /jcGearbox-<that>'
 // The engine puts this before a Slack message's text by the time its turn starts.
 const NON_USER_FRAME = '[MESSAGE FROM NON-USER SOURCE - NOT USER INPUT]\n'
-// The model setting that runs Opus while planning and Sonnet while executing.
+// The model setting that runs Opus while planning and Sonnet while executing:
+// a model of the person's choosing, though no model id of its own.
 const OPUSPLAN = /^opusplan(\[\w+\])?$/i
 
 type Mode = 'auto' | 'shadow' | 'off'
@@ -37,7 +38,7 @@ type Decision = {
   effort?: Effort
   sent?: { model: string; effort: string | number | null } // what the request carried: ours in auto, the engine's own otherwise
   pick?: string // Jev's own pick as model·effort, which the log shows beside `sent` and the status line in shadow
-  why?: string[] // why it differs from Jev's pick (shadow, pin, /model, effort pinned), and ultracode
+  why?: string[] // why it differs from Jev's pick (shadow, pin, /model, effort pinned, plan mode, Jev unsure), and ultracode
   served?: string // the model the API answered as, when it was not the one sent
   engine?: { model: string; effort: string | number | null } // the engine's own model and effort for the turn
   jevMs?: number // how long Jev took, a retry included
@@ -62,6 +63,7 @@ type SessionRecord = {
   pin?: string // set by /jcGearbox pin
   userModel?: boolean // the person switched model (/model or the picker)
   effortPinned?: boolean // the person changed the effort
+  ranPinned?: boolean // the last plain turn ran at the effort the person holds
   badModels?: string[] // models the API did not answer as
   answered?: string[] // models a rewritten request of the session got an answer from
   last?: Decision
@@ -117,7 +119,6 @@ type Ctx = {
   engineModels: Map<string, string> // each session's own model, as its start, its last plain turn or a switch left it
   forks: Map<string, { model: string; inPlan: boolean } | null> // each subagent seen: the model a fork of the main conversation started on, and whether in a plan-mode turn; else null
   planMode: Set<string> // the sessions whose last prompt was sent in plan mode
-  opusplan?: boolean // the main loop's model is opusplan (Opus while planning, Sonnet while executing), as far as the mod can tell
   failure?: Failure // the main loop's turn that died of an API error, as far as its two reports are in
   queue: Promise<unknown> // the session record's last change, which the next waits for
 }
@@ -158,7 +159,6 @@ export const register: Register = (on, options) => {
       const id = await $.session.id()
       const own = await sessionModel($, ctx, id)
       if (own) ctx.engineModels.set(id, own)
-      ctx.opusplan = await readOpusplan($)
     }
     await $.command.register({
       name: 'jcGearbox',
@@ -230,9 +230,9 @@ export const register: Register = (on, options) => {
         const agent = (await $.agent.list()).find(a => a.id === e.agentId)
         const session = await $.session.id()
         const own = await sessionModel($, ctx, session)
-        const routed = agent?.type === 'fork' && !agent.parentId && (own === undefined || sameModel(e.model, own))
+        const follows = agent?.type === 'fork' && !agent.parentId && (own === undefined || sameModel(e.model, own))
         // Made in a plan-mode turn, it plans throughout: the floor holds for all its steps.
-        ctx.forks.set(e.agentId, routed ? { model: e.model, inPlan: ctx.planMode.has(session) } : null)
+        ctx.forks.set(e.agentId, follows ? { model: e.model, inPlan: ctx.planMode.has(session) } : null)
       }
       const fork = ctx.forks.get(e.agentId)
       if (!fork || fork.model !== e.model || !(await apiKey($, opt))) return yield* next(e)
@@ -348,9 +348,6 @@ export const register: Register = (on, options) => {
   on('classic.PostModelSwitch', async ($, e, next) => {
     ctx.engineModels.set(await $.session.id(), e.to_model)
     const byPerson = e.source === 'command' || e.source === 'picker' || e.source === 'sdk'
-    // The model asked for by name says whether it is opusplan; the engine's
-    // own switch (a fallback, opusplan changing phase) names none.
-    if ((byPerson || e.source === 'resume') && e.requested_model) ctx.opusplan = OPUSPLAN.test(e.requested_model)
     if (byPerson && e.from_model !== e.to_model) {
       await joinedRecord($, ctx) // a resumed or forked conversation was decided before this
       await change($, ctx, r => {
@@ -372,9 +369,11 @@ export const register: Register = (on, options) => {
   })
 
   // /model naming the model in use, or /effort naming a level, is the
-  // person's choice, which no switch reports. A switch to another model reports
-  // itself; a word that only shows something, the picker or a name that is no
-  // model or level is no choice. /effort auto (or unset) hands the effort back.
+  // person's choice, which no switch reports; so is /model opusplan, whose
+  // model of the moment may well be the one in use. A switch to another model
+  // reports itself; a word that only shows something, the picker or a name
+  // that is no model or level is no choice. /effort auto (or unset) hands the
+  // effort back.
   on('command.run', { command: ['model', 'effort'] }, async ($, e, next) => {
     const result = await next(e)
     const arg = e.args.trim()
@@ -392,13 +391,10 @@ export const register: Register = (on, options) => {
     const bare = (model: string) => model.replace(/\[\w+\]$/, '')
     const engine = e.command === 'model' ? await sessionModel($, ctx, id) : undefined
     const named = e.command === 'model' ? resolveModel(arg, await resolution($, ctx, id)) : undefined
-    // Also when the model it resolves to is the one in use, which no switch reports.
-    if (e.command === 'model') {
-      if (OPUSPLAN.test(arg)) ctx.opusplan = true
-      else if (named) ctx.opusplan = false
-    }
     const chosen =
-      e.command === 'effort' ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg) : !!named && !!engine && bare(named.id) === bare(engine)
+      e.command === 'effort'
+        ? isEffort(arg.toLowerCase()) || /^\d+$/.test(arg)
+        : OPUSPLAN.test(arg) || (!!named && !!engine && bare(named.id) === bare(engine))
     if (chosen) {
       await change($, ctx, r => {
         if (!r.decided) return false
@@ -567,7 +563,7 @@ async function plan(
   // with or without a model of its own, so that Jev can give "stay on this
   // model" its share: asked about weaker tiers only, its answer would add up
   // to one below the engine and the session would move down whatever the task.
-  const anchor = first ? anchorTiers(ctx, id, await sessionBase($, ctx, id, own ?? model, tiers), tiers) : []
+  const anchor = first ? engineTiers(await sessionBase($, inPlan, own ?? model, tiers), tiers) : []
   const choices = TIERS.filter(t => offered.includes(t) || anchor.includes(t))
   let asked: { result?: JevResult; error?: string } | undefined
   let jevMs: number | undefined
@@ -613,6 +609,8 @@ async function plan(
     if (!turn.command) {
       ctx.engineModels.set(id, model)
       if (changed) r.effortPinned = true
+      if (r.effortPinned) r.ranPinned = true
+      else delete r.ranPinned
       r.rawEffort = raw
       r.rawModel = model
       ctx.baselined.add(id)
@@ -692,7 +690,7 @@ async function plan(
       ...(r.pin ? ['pin'] : r.userModel ? ['/model'] : []),
       ...(r.effortPinned ? ['effort pinned'] : []),
       ...(ownModel ? ['command model'] : []),
-      ...(!ownModel && chosen !== current(r) ? ['plan mode'] : []),
+      ...(auto && !ownModel && chosen !== current(r) ? ['plan mode'] : []),
       ...(unsure ? ['Jev unsure'] : []),
     ]
     // Jev's own pick: the first turn's model, at the effort Jev decided (the
@@ -756,38 +754,18 @@ function engineTiers(model: string, tiers: Tiers): Tier[] {
   return tier ? [tier] : []
 }
 
-// The tiers a session's picks are made relative to: its model's. Under
-// opusplan the engine runs Opus while planning and Sonnet while executing, so
-// Opus in plan mode says nothing of the person's choice: that is balanced.
-// (Any other model under the setting is one chosen for this session over it.)
-function anchorTiers(ctx: Ctx, session: string, model: string, tiers: Tiers): Tier[] {
-  const own = engineTiers(model, tiers)
-  const planningOnOpus = !!ctx.opusplan && ctx.planMode.has(session) && own.includes('strong') && !own.includes('balanced')
-  return planningOnOpus && tiers.balanced ? ['balanced'] : own
-}
-
-// The model the session runs on outside plan mode. In plan mode the engine
-// raises a session on Haiku to Sonnet; the main loop's model, as the engine
-// reports it, still names the one chosen.
-async function sessionBase($: EngineInterface, ctx: Ctx, session: string, model: string, tiers: Tiers): Promise<string> {
-  if (!ctx.planMode.has(session)) return model
+// The model the session's picks are measured from: the one it runs on outside
+// plan mode. In plan mode the engine itself runs a stronger one (Opus under
+// opusplan, Sonnet for a session on the haiku alias), while the main loop's
+// model, as /model shows it, still names the one chosen: Sonnet under opusplan,
+// Haiku on the alias. Where the engine cannot tell, the model of the moment.
+async function sessionBase($: EngineInterface, inPlan: boolean, model: string, tiers: Tiers): Promise<string> {
+  if (!inPlan) return model
   try {
     const own = await $.session.model()
     return own && rankOf(own, tiers) >= 0 && rankOf(own, tiers) < rankOf(model, tiers) ? own : model
   } catch {
     return model // a Claude Code that cannot tell
-  }
-}
-
-// Whether the main loop's model is opusplan, as far as the mod can tell:
-// ANTHROPIC_MODEL, else the model setting, else ANTHROPIC_DEFAULT_MODEL (the
-// --model flag it cannot see).
-async function readOpusplan($: EngineInterface): Promise<boolean> {
-  try {
-    const model = (await $.env.get('ANTHROPIC_MODEL')) ?? (await $.settings.read()).model ?? (await $.env.get('ANTHROPIC_DEFAULT_MODEL'))
-    return typeof model === 'string' && OPUSPLAN.test(model)
-  } catch {
-    return false // a Claude Code that cannot tell
   }
 }
 
@@ -872,13 +850,16 @@ function lastEffort(r: SessionRecord): string | undefined {
   return r.effortPinned && typeof r.rawEffort === 'string' ? r.rawEffort : r.effort
 }
 
-// The person hands the effort back: the router goes on from the level they
-// last ran at, within its bounds; after a number, from none in particular.
+// The person hands the effort back: the router goes on from the level the
+// last turn ran at, within its bounds. That is theirs once a turn ran at it
+// (a number among them: then from none in particular), else the router's
+// own, which stays as it is.
 function unpinEffort(r: SessionRecord, opt: Options) {
-  if (r.effortPinned) {
+  if (r.effortPinned && (r.ranPinned || r.effort === undefined)) {
     if (isEffort(r.rawEffort)) r.effort = clampEffort(r.rawEffort, opt.minEffort, opt.maxEffort)
     else delete r.effort
   }
+  delete r.ranPinned
   delete r.effortPinned
   delete r.rawEffort
 }

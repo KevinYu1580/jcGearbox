@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { AUTO, CONTINUE, EASY, STRONG, SURE_EASY, command, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
+import { AUTO, CONTINUE, EASY, STRONG, SURE_EASY, command, drain, firstStrongThenContinue, run, start, switchModel, turn, world } from './world.ts'
 
 const FABLE = 'claude-fable-5-1'
 
@@ -49,6 +49,17 @@ describe('model switches', () => {
     expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
   })
 
+  test("/model opusplan is the person's choice too: its model of the moment may be the one in use, which no switch reports", AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? SURE_EASY : CONTINUE) })
+    await start($)
+    await command($, 'pin haiku')
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'model', 'opusplan')
+    await turn($, 'ok', 't2')
+    expect(w.steps.map(s => s.model)).toEqual([HAIKU, 'claude-sonnet-5-5'])
+    expect((await command($, '')).text).toContain('your choice (/model)')
+  })
+
   test('/effort naming a level pins the effort, even the level in use', AUTO, async ($, on) => {
     const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : { answers: { ...COMPLAINT.answers, escalate: { type: 'noul', noul: 0.05 } } }) })
     await start($)
@@ -64,7 +75,7 @@ describe('model switches', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1')
     await command($, 'pin haiku')
-    for (const args of ['current', 'list', 'no-such-model', 'opusplan']) await run($, 'model', args)
+    for (const args of ['current', 'list', 'no-such-model']) await run($, 'model', args)
     for (const args of ['status', 'help', 'auto', 'unset', 'ultracode on', 'extreme']) await run($, 'effort', args)
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
@@ -132,6 +143,31 @@ describe('model switches', () => {
     await turn($, 'go on', 't3', { effort: 'medium' })
     // Nothing of the router's to go on from: the continuation rides the engine's own level.
     expect(w.steps.map(s => s.effort)).toEqual(['low', 50, 'medium'])
+  })
+
+  test('a level taken back before any turn ran at it leaves the router where it was', AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', 'max')
+    await run($, 'effort', 'auto')
+    await turn($, 'ok', 't2', { effort: 'medium' })
+    await run($, 'effort', 'max')
+    await run($, 'jcGearbox-auto')
+    await turn($, 'go on', 't3', { effort: 'medium' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'low', 'low'])
+  })
+
+  test('a level changed again after a turn ran at the first: the router goes on from the level that ran', AUTO, async ($, on) => {
+    const w = world(on, { reply: (body: any) => (body.questions.tier ? EASY : CONTINUE) })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await run($, 'effort', 'max')
+    await turn($, 'ok', 't2', { effort: 'max' })
+    await run($, 'effort', 'medium')
+    await run($, 'effort', 'auto')
+    await turn($, 'go on', 't3', { effort: 'medium' })
+    expect(w.steps.map(s => s.effort)).toEqual(['low', 'max', 'max'])
   })
 
   test('/model or /effort before the first turn is only the starting point', AUTO, async ($, on) => {
@@ -205,6 +241,16 @@ describe('plan mode', () => {
     expect(w.steps).toEqual([{ model: HAIKU, effort: 'high' }, { model: 'claude-opus-5-5', effort: 'low' }, { model: HAIKU, effort: 'high' }])
   })
 
+  test('in shadow nothing is floored, so the log says nothing of plan mode', {}, async ($, on) => {
+    const w = world(on, { reply: toHaiku })
+    await start($)
+    await turn($, 'rename foo to bar', 't1')
+    await turn($, 'plan the rename', 't2', { permissionMode: 'plan' })
+    expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5'])
+    expect(w.status.at(-1)).toBe('shadow ▸ haiku-4-5-20251001·-')
+    expect((await command($, 'log 1')).text).not.toContain('plan mode')
+  })
+
   test('an engine model that names no tier is raised to the balanced tier too', AUTO, async ($, on) => {
     const w = world(on, { reply: toHaiku, model: 'my-gateway-model' })
     await start($)
@@ -246,9 +292,12 @@ describe('plan mode', () => {
   })
 
   describe('under opusplan', () => {
-    test('the tiers are anchored on balanced while planning on Opus', AUTO, async ($, on) => {
+    // The main loop's model, as the engine reports it, is Sonnet in either phase.
+    const OPUSPLAN = { model: 'claude-sonnet-5-5', settings: { model: 'opusplan' } }
+
+    test('the first prompt is measured from Sonnet, the main loop\'s model, while planning on Opus', AUTO, async ($, on) => {
       // Against a strong anchor, low and balanced would add up to the downgrade probability.
-      const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+      const w = world(on, { reply: easy, ...OPUSPLAN })
       await start($)
       await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
       await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
@@ -259,7 +308,7 @@ describe('plan mode', () => {
     })
 
     test('so a hard task planned on Opus is executed on Opus too', AUTO, async ($, on) => {
-      const w = world(on, { reply: strong, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
+      const w = world(on, { reply: strong, ...OPUSPLAN })
       await start($)
       await turn($, 'redesign the sync engine', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
       await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
@@ -267,53 +316,27 @@ describe('plan mode', () => {
       expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-opus-5-5'])
     })
 
-    test('the setting is read as opusplan[1m] too', AUTO, async ($, on) => {
-      world(on, { reply: easy, model: 'claude-opus-5-5[1m]', settings: { model: 'opusplan[1m]' } })
+    test('and from Sonnet[1m] under opusplan[1m]', AUTO, async ($, on) => {
+      world(on, { reply: easy, model: 'claude-sonnet-5-5[1m]', settings: { model: 'opusplan[1m]' } })
       await start($)
       await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5[1m]'] })
       expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
     })
 
-    test('from ANTHROPIC_MODEL', AUTO, async ($, on) => {
-      world(on, { reply: easy, model: 'claude-opus-5-5', env: { ANTHROPIC_MODEL: 'opusplan' } })
+    test('a first prompt in the executing phase is measured from Sonnet as on any session', AUTO, async ($, on) => {
+      const w = world(on, { reply: strong, ...OPUSPLAN })
       await start($)
-      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
-      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
+      await turn($, 'redesign the sync engine', 't1')
+      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5'])
     })
 
-    test('from /model opusplan typed before the first prompt, which may report no switch', AUTO, async ($, on) => {
-      world(on, { reply: easy, model: 'claude-opus-5-5' })
-      await start($)
-      await run($, 'model', 'opusplan')
-      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
-      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
-    })
-
-    test('from a switch asking for it by name', AUTO, async ($, on) => {
-      world(on, { reply: easy, model: 'claude-opus-5-5' })
-      await start($)
-      await $.classic.PostModelSwitch({ from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opusplan', source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '5m', estimated_cache_write_usd: 0, pricing: 'catalog' })
-      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
-      expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
-    })
-
-    test('ANTHROPIC_MODEL naming another model wins over the setting: an Opus session of its own is measured from Opus', AUTO, async ($, on) => {
-      const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' }, env: { ANTHROPIC_MODEL: 'claude-opus-5-5' } })
+    test('an Opus session of its own, started over the setting, is measured from Opus', AUTO, async ($, on) => {
+      const w = world(on, { reply: easy, model: 'claude-opus-5-5', settings: { model: 'opusplan' } })
       await start($)
       await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
       await turn($, 'ok, do it', 't2', { models: ['claude-opus-5-5'] })
       expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
       expect((await command($, '')).text).toContain('model: claude-sonnet-5-5 (chosen on the first turn)')
-    })
-
-    test('a switch the person makes to another model ends it', AUTO, async ($, on) => {
-      const w = world(on, { reply: easy, model: 'claude-sonnet-5-5', settings: { model: 'opusplan' } })
-      await start($)
-      await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'picker')
-      w.model = 'claude-opus-5-5'
-      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
-      await turn($, 'ok, do it', 't2', { models: ['claude-opus-5-5'] })
-      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
     })
 
     test('a session on Fable over the setting is measured from Fable: it is not pulled down to Opus', AUTO, async ($, on) => {
@@ -332,6 +355,16 @@ describe('plan mode', () => {
       await start($)
       await turn($, 'rename foo to bar', 't1', { models: [HAIKU] })
       expect(w.steps.map(s => s.model)).toEqual(['claude-sonnet-5-5'])
+    })
+
+    test('where the engine cannot tell its model, the first prompt is measured from the model of the moment', AUTO, async ($, on) => {
+      const w = world(on, { reply: easy, ...OPUSPLAN, noModel: true })
+      await start($)
+      await turn($, 'rename foo to bar', 't1', { permissionMode: 'plan', models: ['claude-opus-5-5'] })
+      await switchModel($, 'claude-opus-5-5', 'claude-sonnet-5-5', 'auto')
+      await turn($, 'ok, do it', 't2')
+      expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+      expect((await command($, '')).text).toContain('model: claude-sonnet-5-5 (chosen on the first turn)')
     })
   })
 })
@@ -579,6 +612,21 @@ describe('a model that is not served', () => {
     const w = world(on, { reply: STRONG, noResponseOnce: 'claude-opus-5-5', refusalFrom: 'claude-opus-5-5' })
     await start($)
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-5-5', 'claude-sonnet-5-5'], reason: 'error' })
+    expect((w.db.get('session:session-1') as any).badModels).toEqual(['claude-opus-5-5'])
+  })
+
+  test("a failure reported after the next turn's first request still blames the model once", AUTO, async ($, on) => {
+    const w = world(on, { reply: STRONG, noResponseOnce: 'claude-opus-5-5', refusalFrom: 'claude-opus-5-5' })
+    await start($)
+    // The first turn's rewritten request gets no response and the turn dies of it ...
+    await $.classic.UserPromptSubmit({ prompt: 'redesign the sync engine', permission_mode: 'default' })
+    await $.prompt.submit({ text: 'redesign the sync engine', wait: false, origin: { kind: 'sdk' } })
+    await $.turn.start({ text: 'redesign the sync engine', turnId: 't1' })
+    await drain($.turn.step({ turnId: 't1', index: 0, model: 'claude-sonnet-5-5', messageCount: 2, effort: 'high' }))
+    await $.turn.complete({ answer: '', durationMs: 5, isAborted: false, turnId: 't1', reason: 'error' })
+    // ... the next turn's first request, declined, blames the model before StopFailure says why the first died.
+    await drain($.turn.step({ turnId: 't2', index: 0, model: 'claude-sonnet-5-5', messageCount: 4, effort: 'high' }))
+    await $.classic.StopFailure({ error: 'model_not_found' })
     expect((w.db.get('session:session-1') as any).badModels).toEqual(['claude-opus-5-5'])
   })
 

@@ -127,11 +127,11 @@ Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the
 | `/jcGearbox-pin <model>` | Uses that model for this session (plan mode excepted, see below) |
 | `/model <name>` (even the model in use) or another model in the picker, after the first prompt | Stops changing the model for this session |
 | `/effort <level>` (even the level in use) or another effort in the picker, after the first prompt | Stops changing the effort for this session |
-| `/effort auto` (or `unset`) | Changes the effort again, going on from the level you last ran at (kept within `min_effort` and `max_effort`) |
-| Plan mode (including `opusplan`'s planning phase) | Those turns are never rewritten below the `balanced` tier (when one is set, and the API answers as it), nor below the model Claude Code is running itself (it raises the model to plan, and the mod does not pull it back down); a pinned model that names no tier is kept. While planning on Opus under `opusplan` the tiers are anchored on `balanced`. The mod reads `opusplan` from the `model` setting, `ANTHROPIC_MODEL` or `/model`, not from the `--model` flag |
+| `/effort auto` (or `unset`) | Changes the effort again, going on from the level you last ran at (kept within `min_effort` and `max_effort`; after a number of your own, from no level in particular) |
+| Plan mode (including `opusplan`'s planning phase) | Those turns are never rewritten below the `balanced` tier (when one is set, and the API answers as it), nor below the model Claude Code is running itself (under `opusplan` and on the `haiku` alias it raises the model to plan, and the mod does not pull it back down); a pinned model that names no tier is kept. A first prompt sent in plan mode is measured from the model `/model` shows (Sonnet under `opusplan`, Haiku on the alias), not from the one raised to plan |
 | `/jcGearbox-auto` | Drops all of the above; the effort goes on from the level you last ran at |
 
-Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`. An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
+Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`. The same goes for picking Opus Plan Mode while its model of the moment is the one in use: type `/model opusplan`. An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
 
 ## Commands
 
