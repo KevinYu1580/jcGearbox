@@ -198,6 +198,15 @@ describe('the status line shows what was sent', () => {
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
+  test('a model rewritten with no effort from Jev shows a dash in the status line, not a question mark', AUTO, async ($, on) => {
+    const { effort: _, ...answers } = STRONG.answers
+    const NO_EFFORT = { answers }
+    const w = world(on, { reply: NO_EFFORT })
+    await start($)
+    await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: null })
+    expect(w.status.at(-1)).toBe('opus-5-5·-')
+  })
+
   test("a level equal to the engine's own, which Claude Code drops, is unknown on a model whose default differs", AUTO, async ($, on) => {
     const w = world(on, { reply: STRONG })
     await start($)
