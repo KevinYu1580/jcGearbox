@@ -745,7 +745,7 @@ async function plan(
     // (what was sent is the session's own). The why is in /jcGearbox-log; a Jev
     // error is said, or an unjudged prompt would look judged.
     const head = auto ? '' : `${mode} ▸ `
-    $.ui.status(`${head}${auto ? sentLabel(sent) : pick}${asked?.error ? ` · Jev ${asked.error}` : ''}`)
+    $.ui.status(`${head}${auto ? (sent.effort === '?' ? `${label(sent.model)}·${jevEffort}` : sentLabel(sent)) : pick}${asked?.error ? ` · Jev ${asked.error}` : ''}`)
 
     return { apply: auto, model: chosen, effort, logKey }
   })

@@ -194,7 +194,7 @@ describe('the status line shows what was sent', () => {
     await start($)
     await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), effort: null })
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5' }])
-    expect(w.status.at(-1)).toBe('opus-5-5·?')
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
@@ -203,7 +203,7 @@ describe('the status line shows what was sent', () => {
     await start($)
     await turn($, 'redesign the sync engine', 't1', { models: ['claude-sonnet-4-6'], effort: 'high' })
     expect(w.steps).toEqual([{ model: 'claude-opus-5-5', effort: 'high' }])
-    expect(w.status.at(-1)).toBe('opus-5-5·?')
+    expect(w.status.at(-1)).toBe('opus-5-5·high')
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
