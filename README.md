@@ -147,7 +147,7 @@ Picking the session's original model again in the picker isn't a switch to Claud
 
 `/jcGearbox <action>` still works.
 
-`/jcGearbox-setup` and `/jcGearbox-pin` are skills, so the typeahead lists them in a new session before its first prompt; the other commands are registered when the session starts and are listed from the first prompt on.
+`/jcGearbox-setup`, `/jcGearbox-pin`, `/jcGearbox-auto`, `/jcGearbox-shadow`, `/jcGearbox-off` and `/jcGearbox-on` are skills, so the typeahead lists them in a new session before its first prompt, and the mod answers them itself; the other commands are registered when the session starts and are listed from the first prompt on.
 
 ## Status line
 

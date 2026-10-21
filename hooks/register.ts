@@ -128,6 +128,9 @@ type Ctx = {
 // come in either order.
 type Failure = { model?: string; error?: string }
 
+// A skill runs under its plugin's name (jc-gearbox:<name>), a registered command under its own.
+const named = (name: string) => new RegExp(`^(?:jc-gearbox:)?${name}$`)
+
 export const register: Register = (on, options) => {
   const ctx: Ctx = {
     opt: readOptions(options),
@@ -166,13 +169,9 @@ export const register: Register = (on, options) => {
       argumentHint: '[status | auto | shadow | off | on | pin <model> | log [n] | stats]',
     })
     // One command per action, so the typeahead lists them all; /jcGearbox <action> still works.
-    // /jcGearbox-pin is a skill (skills/jcGearbox-pin): it is listed before the session starts, and this module serves it.
+    // The mode commands and /jcGearbox-pin are skills (skills/): listed before the session starts, served by this module.
     const d = 'Jev model router:'
     await $.command.register({ name: 'jcGearbox-status', description: `${d} this session's mode, model, effort and last request` })
-    await $.command.register({ name: 'jcGearbox-auto', description: `${d} route model and effort in this session; clears pins` })
-    await $.command.register({ name: 'jcGearbox-shadow', description: `${d} judge and show, but send requests unchanged, in this session` })
-    await $.command.register({ name: 'jcGearbox-off', description: `${d} turn it off for this session` })
-    await $.command.register({ name: 'jcGearbox-on', description: `${d} turn it back on for this session (default mode, or auto)` })
     await $.command.register({ name: 'jcGearbox-log', description: `${d} recent decisions, across sessions`, argumentHint: '[n]' })
     await $.command.register({ name: 'jcGearbox-stats', description: `${d} how the logged decisions compare with the engine's own` })
     await prune($)
@@ -422,12 +421,11 @@ export const register: Register = (on, options) => {
     return jcGearbox($, ctx, sub, arg)
   })
   on('command.run', { command: 'jcGearbox-status' }, $ => jcGearbox($, ctx, 'status', undefined))
-  on('command.run', { command: 'jcGearbox-auto' }, $ => jcGearbox($, ctx, 'auto', undefined))
-  on('command.run', { command: 'jcGearbox-shadow' }, $ => jcGearbox($, ctx, 'shadow', undefined))
-  on('command.run', { command: 'jcGearbox-off' }, $ => jcGearbox($, ctx, 'off', undefined))
-  on('command.run', { command: 'jcGearbox-on' }, $ => jcGearbox($, ctx, 'on', undefined))
-  // A skill runs under its plugin's name (jc-gearbox:jcGearbox-pin), a registered command under its own.
-  on('command.run', { command: /^(?:jc-gearbox:)?jcGearbox-pin$/ }, ($, e) => jcGearbox($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
+  on('command.run', { command: named('jcGearbox-auto') }, $ => jcGearbox($, ctx, 'auto', undefined))
+  on('command.run', { command: named('jcGearbox-shadow') }, $ => jcGearbox($, ctx, 'shadow', undefined))
+  on('command.run', { command: named('jcGearbox-off') }, $ => jcGearbox($, ctx, 'off', undefined))
+  on('command.run', { command: named('jcGearbox-on') }, $ => jcGearbox($, ctx, 'on', undefined))
+  on('command.run', { command: named('jcGearbox-pin') }, ($, e) => jcGearbox($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
   on('command.run', { command: 'jcGearbox-log' }, ($, e) => jcGearbox($, ctx, 'log', e.args.trim().split(/\s+/)[0] || undefined))
   on('command.run', { command: 'jcGearbox-stats' }, $ => jcGearbox($, ctx, 'stats', undefined))
 }

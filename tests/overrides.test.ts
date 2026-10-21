@@ -848,7 +848,7 @@ describe('the /jcGearbox-<action> commands', () => {
   test('are registered next to /jcGearbox', async ($, on) => {
     const w = world(on)
     await start($)
-    expect(w.registered).toEqual(['jcGearbox', 'jcGearbox-status', 'jcGearbox-auto', 'jcGearbox-shadow', 'jcGearbox-off', 'jcGearbox-on', 'jcGearbox-log', 'jcGearbox-stats'])
+    expect(w.registered).toEqual(['jcGearbox', 'jcGearbox-status', 'jcGearbox-log', 'jcGearbox-stats'])
   })
 
   test('do what /jcGearbox <action> does', AUTO, async ($, on) => {
@@ -872,6 +872,15 @@ describe('the /jcGearbox-<action> commands', () => {
     expect((await run($, 'jc-gearbox:jcGearbox-pin', 'sonnet')).text).toContain('model pinned to claude-sonnet-5-5')
     await turn($, 'go on', 't2')
     expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
+  test("the mode commands are answered under the plugin's name too, as skills are run", AUTO, async ($, on) => {
+    world(on)
+    await start($)
+    expect((await run($, 'jc-gearbox:jcGearbox-shadow')).text).toBe('jcGearbox: shadow for this session.')
+    expect((await run($, 'jc-gearbox:jcGearbox-off')).text).toBe('jcGearbox: off for this session.')
+    expect((await run($, 'jc-gearbox:jcGearbox-on')).text).toBe('jcGearbox: auto for this session.')
+    expect((await run($, 'jc-gearbox:jcGearbox-auto')).text).toContain('auto for this session')
   })
 
   test('each one is answered', async ($, on) => {
