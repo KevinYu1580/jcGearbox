@@ -1,6 +1,6 @@
 {
   "name": "jc-gearbox",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Picks the model once per session and the effort every turn, using TypeSafe's Jev to judge how hard the task is.",
   "author": {
     "name": "KevinYu1580"
