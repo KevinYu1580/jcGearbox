@@ -865,6 +865,15 @@ describe('the /jcGearbox-<action> commands', () => {
     expect(w.asked).toHaveLength(2)
   })
 
+  test("/jcGearbox-pin is answered under the plugin's name too, as a skill is run", AUTO, async ($, on) => {
+    const w = world(on, { reply: firstStrongThenContinue })
+    await start($)
+    await turn($, 'redesign the sync engine', 't1')
+    expect((await run($, 'jc-gearbox:jcGearbox-pin', 'sonnet')).text).toContain('model pinned to claude-sonnet-5-5')
+    await turn($, 'go on', 't2')
+    expect(w.steps.at(-1)?.model).toBe('claude-sonnet-5-5')
+  })
+
   test('each one is answered', async ($, on) => {
     const w = world(on)
     await start($)

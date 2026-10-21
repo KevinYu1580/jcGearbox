@@ -426,7 +426,8 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'jcGearbox-shadow' }, $ => jcGearbox($, ctx, 'shadow', undefined))
   on('command.run', { command: 'jcGearbox-off' }, $ => jcGearbox($, ctx, 'off', undefined))
   on('command.run', { command: 'jcGearbox-on' }, $ => jcGearbox($, ctx, 'on', undefined))
-  on('command.run', { command: 'jcGearbox-pin' }, ($, e) => jcGearbox($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
+  // A skill runs under its plugin's name (jc-gearbox:jcGearbox-pin), a registered command under its own.
+  on('command.run', { command: /^(?:jc-gearbox:)?jcGearbox-pin$/ }, ($, e) => jcGearbox($, ctx, 'pin', e.args.trim().split(/\s+/)[0] || undefined))
   on('command.run', { command: 'jcGearbox-log' }, ($, e) => jcGearbox($, ctx, 'log', e.args.trim().split(/\s+/)[0] || undefined))
   on('command.run', { command: 'jcGearbox-stats' }, $ => jcGearbox($, ctx, 'stats', undefined))
 }
