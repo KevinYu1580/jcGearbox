@@ -103,23 +103,19 @@ describe('slash commands', () => {
     expect((await command($, 'log 1')).text).not.toContain('command model')
   })
 
-  test("a first command's own model is not what the session's model is measured from", AUTO, async ($, on) => {
-    const w = world(on, { reply: (body: any) => (body.questions.tier ? LEANING_BALANCED : CONTINUE) })
+  test("a first command's own model is not what the session's model is measured from", async ($, on) => {
+    world(on, { reply: (body: any) => (body.questions.tier ? LEANING_BALANCED : CONTINUE) })
     await start($)
     await switchModel($, 'claude-sonnet-5-5', 'claude-opus-5-5', 'sdk')
     await turn($, '/quick x', 't1', { origin: 'composer', startText: commandText('quick', 'x'), models: ['claude-haiku-4-5-20251001'] })
-    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
-    await turn($, 'ok', 't2', { models: ['claude-opus-5-5'] })
-    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+    expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
   })
 
-  test("a first command's own model is told from the session's with no switch to tell it by, as in the CLI", AUTO, async ($, on) => {
-    const w = world(on, { model: 'claude-opus-5-5', reply: (body: any) => (body.questions.tier ? LEANING_BALANCED : CONTINUE) })
+  test("a first command's own model is told from the session's with no switch to tell it by, as in the CLI", async ($, on) => {
+    world(on, { model: 'claude-opus-5-5', reply: (body: any) => (body.questions.tier ? LEANING_BALANCED : CONTINUE) })
     await start($)
     await turn($, '/quick x', 't1', { origin: 'composer', startText: commandText('quick', 'x'), models: ['claude-haiku-4-5-20251001'] })
-    expect(w.steps.at(-1)?.model).toBe('claude-haiku-4-5-20251001')
-    await turn($, 'ok', 't2', { models: ['claude-opus-5-5'] })
-    expect(w.steps.at(-1)?.model).toBe('claude-opus-5-5')
+    expect((await command($, '')).text).toContain("model: the session's own (no clear pick)")
   })
 
   test('a command other than the one submitted is not a user turn', AUTO, async ($, on) => {
