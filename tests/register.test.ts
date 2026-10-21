@@ -198,34 +198,6 @@ describe('the status line shows what was sent', () => {
     expect((await command($, 'log 1')).text).toContain('opus-5-5·?  jev opus-5-5·high')
   })
 
-  test("a command's own model on the session's first prompt becomes the session's model", AUTO, async ($, on) => {
-    const w = world(on, { reply: STRONG })
-    await start($)
-    await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), models: ['claude-haiku-4-5-20251001'] })
-    expect(w.status.at(-1)).toBe('haiku-4-5-20251001·-')
-    await turn($, 'now the tests', 't2')
-    expect(w.status.at(-1)).toBe('haiku-4-5-20251001·-')
-    expect(w.steps.map(s => s.model)).toEqual(['claude-haiku-4-5-20251001', 'claude-haiku-4-5-20251001'])
-    expect((await command($, '')).text).toContain('model: claude-haiku-4-5-20251001 (chosen on the first turn)')
-  })
-
-  test("a command's own model on a later turn does not change the session's model", AUTO, async ($, on) => {
-    const w = world(on, { reply: STRONG })
-    await start($)
-    await turn($, 'redesign the sync engine', 't1')
-    await turn($, '/review the auth module', 't2', { origin: 'composer', startText: commandText('review', 'the auth module'), models: ['claude-haiku-4-5-20251001'] })
-    await turn($, 'now the tests', 't3')
-    expect(w.steps.map(s => s.model)).toEqual(['claude-opus-5-5', 'claude-haiku-4-5-20251001', 'claude-opus-5-5'])
-  })
-
-  test("in shadow a command's own model on the first prompt does not replace Jev's pick", async ($, on) => {
-    world(on, { reply: STRONG })
-    await start($)
-    await turn($, '/review the auth module', 't1', { origin: 'composer', startText: commandText('review', 'the auth module'), models: ['claude-haiku-4-5-20251001'] })
-    expect((await command($, 'log 1')).text).toContain('jev opus-5-5')
-    expect((await command($, '')).text).toContain('model: claude-opus-5-5 (chosen on the first turn)')
-  })
-
   test('a model rewritten with no effort from Jev shows a dash in the status line, not a question mark', AUTO, async ($, on) => {
     const { effort: _, ...answers } = STRONG.answers
     const NO_EFFORT = { answers }

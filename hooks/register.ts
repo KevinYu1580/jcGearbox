@@ -647,19 +647,13 @@ async function plan(
         for (const t of offered) ids[t] = tiers[t]?.id
         // A tier asked about and left out of the answer got no share of it.
         const given = asked.result?.tierProbabilities
-        // A command's own model on the first prompt is the session's too, so
-        // the next turn does not rewrite the conversation's cache onto
-        // another model. Shadow keeps showing Jev's own pick.
-        r.model =
-          ownModel && mode === 'auto'
-            ? model
-            : pickModel({
-                probabilities: given && Object.fromEntries(choices.map(t => [t, given[t] ?? 0])),
-                models: ids,
-                engine: anchor,
-                upgrade: opt.tierUpgradeProbability,
-                downgrade: opt.tierMinProbability,
-              })
+        r.model = pickModel({
+          probabilities: given && Object.fromEntries(choices.map(t => [t, given[t] ?? 0])),
+          models: ids,
+          engine: anchor,
+          upgrade: opt.tierUpgradeProbability,
+          downgrade: opt.tierMinProbability,
+        })
       }
       // Jev's own effort is written down each turn, for the pick to show. While
       // the person holds the effort it is not the router's: the next turn goes
