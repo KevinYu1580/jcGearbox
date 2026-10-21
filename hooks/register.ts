@@ -166,13 +166,13 @@ export const register: Register = (on, options) => {
       argumentHint: '[status | auto | shadow | off | on | pin <model> | log [n] | stats]',
     })
     // One command per action, so the typeahead lists them all; /jcGearbox <action> still works.
+    // /jcGearbox-pin is a skill (skills/jcGearbox-pin): it is listed before the session starts, and this module serves it.
     const d = 'Jev model router:'
     await $.command.register({ name: 'jcGearbox-status', description: `${d} this session's mode, model, effort and last request` })
     await $.command.register({ name: 'jcGearbox-auto', description: `${d} route model and effort in this session; clears pins` })
     await $.command.register({ name: 'jcGearbox-shadow', description: `${d} judge and show, but send requests unchanged, in this session` })
     await $.command.register({ name: 'jcGearbox-off', description: `${d} turn it off for this session` })
     await $.command.register({ name: 'jcGearbox-on', description: `${d} turn it back on for this session (default mode, or auto)` })
-    await $.command.register({ name: 'jcGearbox-pin', description: `${d} use one model for this session`, argumentHint: '<alias or model id>' })
     await $.command.register({ name: 'jcGearbox-log', description: `${d} recent decisions, across sessions`, argumentHint: '[n]' })
     await $.command.register({ name: 'jcGearbox-stats', description: `${d} how the logged decisions compare with the engine's own` })
     await prune($)

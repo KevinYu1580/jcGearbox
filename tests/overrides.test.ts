@@ -848,7 +848,7 @@ describe('the /jcGearbox-<action> commands', () => {
   test('are registered next to /jcGearbox', async ($, on) => {
     const w = world(on)
     await start($)
-    expect(w.registered).toEqual(['jcGearbox', 'jcGearbox-status', 'jcGearbox-auto', 'jcGearbox-shadow', 'jcGearbox-off', 'jcGearbox-on', 'jcGearbox-pin', 'jcGearbox-log', 'jcGearbox-stats'])
+    expect(w.registered).toEqual(['jcGearbox', 'jcGearbox-status', 'jcGearbox-auto', 'jcGearbox-shadow', 'jcGearbox-off', 'jcGearbox-on', 'jcGearbox-log', 'jcGearbox-stats'])
   })
 
   test('do what /jcGearbox <action> does', AUTO, async ($, on) => {

@@ -147,6 +147,8 @@ flowchart TD
 
 舊寫法 `/jcGearbox <動作>` 仍可用。
 
+`/jcGearbox-setup` 和 `/jcGearbox-pin` 是 skill，新 session 在第一個 prompt 之前，輸入框的選單就列得出來；其他指令在 session 啟動時才註冊，要到第一個 prompt 之後才列得出來。
+
 ## 狀態列
 
 ```
