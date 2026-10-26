@@ -40,7 +40,9 @@ echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-g
 
 ## How it works
 
-**Model**: on a session's first prompt, Jev picks a tier. The model moves to a stronger tier at 0.5 probability that one is needed, to a weaker tier only at 0.8 that one will do, and otherwise stays on your model.
+### Model
+
+On a session's first prompt, Jev picks a tier. The model moves to a stronger tier at 0.5 probability that one is needed, to a weaker tier only at 0.8 that one will do, and otherwise stays on your model.
 
 | Tier | For | Default |
 |---|---|---|
@@ -49,9 +51,49 @@ echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-g
 | `low` | Fast, cheap, high-volume tasks | `haiku` |
 | `long` | Agent sessions that run for hours, deep research | `fable` (costs the most; `off` disables it) |
 
-**Effort**: every prompt starts from Jev's score (`low`–`max`); a prompt that only continues the last task ("ok", "go on") keeps the last effort; saying the last attempt failed goes up one level; anything that could do hard-to-undo damage (production, data deletion, force-push…) gets at least `high`; the result is kept between `min_effort` and `max_effort` and lowered to what the model takes.
+The model is decided once, at the first prompt (diagram 1); after that, only the events in diagram 2 change it. Which model each tier means is up to your settings.
 
-If Jev errors or times out (3 s by default), nothing changes for that prompt. The full rules, diagrams and per-model effort table are in the [reference](docs/README.md#picking-the-model).
+```mermaid
+flowchart TD
+    P["First prompt of a session<br/>(on the model you picked)"] --> Q{"Jev: 0.5 that a stronger tier<br/>is needed, or 0.8 that<br/>a weaker one will do?"}
+    Q -->|"Yes"| O["The session uses<br/>that tier's model<br/>from here on"]
+    Q -->|"No, or Jev<br/>errors / times out"| S["The session stays<br/>on your model"]
+```
+
+```mermaid
+flowchart LR
+    C["After the first prompt,<br/>only these change<br/>the model"]
+    C -->|"/jcGearbox-pin X"| X["Switch to X"]
+    C -->|"/model to another model"| U["Switch to that model;<br/>the mod stops switching"]
+    C -->|"/jcGearbox-auto"| A["Pin and /model cleared,<br/>back to the first<br/>prompt's pick"]
+    C -->|"The chosen model isn't<br/>served or declines"| S["Back to your model,<br/>automatically"]
+```
+
+The diagrams show `auto`. In shadow mode the same decision is only shown in the status line.
+
+### Effort
+
+For every prompt you type:
+
+```mermaid
+flowchart TD
+    P["You send a prompt"] --> C{"Only continuing<br/>the last task?"}
+    C -->|"Yes"| K["Keep the last effort"]
+    C -->|"No"| J["Use Jev's effort score<br/>(low to max), or the last<br/>effort if Jev isn't sure"]
+    K --> F{"Saying the last<br/>attempt failed?"}
+    J --> F
+    F -->|"Yes"| U["One level up"]
+    F -->|"No"| R{"Could a mistake do<br/>hard-to-undo damage?"}
+    U --> R
+    R -->|"Yes"| X["At least high"]
+    R -->|"No"| M["Keep it between<br/>min_effort and max_effort"]
+    X --> M
+    M --> E(["This prompt's effort"])
+```
+
+"Hard-to-undo damage" means production, data deletion, migrations, auth, money or force-push. The result is finally lowered to what the model takes.
+
+If Jev errors or times out (3 s by default), nothing changes for that prompt. The full rules and the per-model effort table are in the [reference](docs/README.md#picking-the-model).
 
 ## Commands
 

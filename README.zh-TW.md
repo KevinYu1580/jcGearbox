@@ -40,7 +40,9 @@ echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-g
 
 ## 運作方式
 
-**model**：session 的第一個 prompt 請 Jev 選 tier。Jev 認為需要較強 tier 的機率 ≥ 0.5 就換強，認為較弱 tier 就夠的機率 ≥ 0.8 才換弱，否則維持你選的 model。
+### model
+
+session 的第一個 prompt 請 Jev 選 tier。Jev 認為需要較強 tier 的機率 ≥ 0.5 就換強，認為較弱 tier 就夠的機率 ≥ 0.8 才換弱，否則維持你選的 model。
 
 | Tier | 用途 | 預設 |
 |---|---|---|
@@ -49,9 +51,49 @@ echo '{"send_assistant_tail": "true"}' | claude plugin configure jc-gearbox@jc-g
 | `low` | 快速、便宜、大量的任務 | `haiku` |
 | `long` | 持續數小時的 agent session、深度研究 | `fable`（最貴，可填 `off` 停用） |
 
-**effort**：每個 prompt 從 Jev 的分數（`low`–`max`）出發；只是接續上一件事（「好」、「繼續」）就沿用上一回合的；說上次失敗就升一級；可能造成難以挽回損害的操作（正式環境、刪資料、force-push 等）至少 `high`；最後限制在 `min_effort`–`max_effort`，並降到該 model 支援的等級。
+model 只在第一個 prompt 決定一次（圖 1），之後只有圖 2 這幾件事會換掉它。每個 tier 對應哪個 model，由你的設定決定。
 
-Jev 出錯或逾時（預設 3 秒）時，這個 prompt 什麼都不改。完整規則、流程圖和各 model 支援的 effort 見[詳細說明](docs/README.zh-TW.md#怎麼選-model)。
+```mermaid
+flowchart TD
+    P["新 session 的第一個 prompt<br/>（用你選的 model）"] --> Q{"Jev：需要更強的 tier ≥ 0.5，<br/>或較弱的就夠 ≥ 0.8？"}
+    Q -->|"是"| O["這個 session 接下來<br/>都用該 tier 的 model"]
+    Q -->|"否，或 Jev 出錯、逾時"| S["這個 session<br/>維持你選的 model"]
+```
+
+```mermaid
+flowchart LR
+    C["第一個 prompt 之後<br/>只有這些會換 model"]
+    C -->|"/jcGearbox-pin X"| X["改用 X"]
+    C -->|"/model 換成別的 model"| U["改用那個 model，<br/>mod 不再換"]
+    C -->|"/jcGearbox-auto"| A["清掉 pin 和 /model，<br/>回到第一個 prompt 選的"]
+    C -->|"選中的 model<br/>無法使用或拒答"| S["自動退回你選的 model"]
+```
+
+圖畫的是 `auto` 模式；shadow 模式判斷方式相同，但只顯示在狀態列。
+
+### effort
+
+每個你送出的 prompt：
+
+```mermaid
+flowchart TD
+    P["你送出一個 prompt"] --> C{"只是接續<br/>上一件事？"}
+    C -->|"是"| K["沿用上一回合的 effort"]
+    C -->|"否"| J["用 Jev 的 effort 分數<br/>（low 到 max）；Jev 沒把握<br/>就沿用上一回合的"]
+    K --> F{"在說上次<br/>失敗了？"}
+    J --> F
+    F -->|"是"| U["升一級"]
+    F -->|"否"| R{"出錯會造成<br/>難以挽回的損害？"}
+    U --> R
+    R -->|"是"| X["至少 high"]
+    R -->|"否"| M["限制在 min_effort<br/>和 max_effort 之間"]
+    X --> M
+    M --> E(["這個 prompt 的 effort"])
+```
+
+「難以挽回的損害」指正式環境、刪資料、資料庫遷移、認證、金流、force-push。最後再降到該 model 支援的等級。
+
+Jev 出錯或逾時（預設 3 秒）時，這個 prompt 什麼都不改。完整規則和各 model 支援的 effort 見[詳細說明](docs/README.zh-TW.md#怎麼選-model)。
 
 ## 指令
 
