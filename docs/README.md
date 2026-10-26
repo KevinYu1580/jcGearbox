@@ -1,3 +1,4 @@
+<!-- Maintainers: keep this file in step with docs/README.zh-TW.md and with the summary in ../README.md. -->
 # jcGearbox reference
 
 English · [繁體中文](README.zh-TW.md) · [Back to the README](../README.md)
@@ -89,7 +90,14 @@ flowchart TD
 | Haiku 4.5 and older models | no effort | — |
 | A model id the mod doesn't know | every level | `high` |
 
-Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the session's model and the last effort; subagents, `claude -p` and Agent SDK runs are left alone (with `fork_follows_route` on, in auto a fork of the main conversation follows the session's model, except one made in a slash command's turn on the command's own model). A slash command or skill that sets its own model or effort keeps it for its turn. **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode` in `/jcGearbox-log` when your prompt has the keyword (pasted text counts too, and whether workflows are on isn't checked). If Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why. A request waits for Jev only when its answer can change it: never in shadow, nor after the first prompt once the effort is yours or the model takes none (slash commands still wait). Then only a first reply quicker than Jev waits for its answer, up to the timeout.
+### Special cases
+
+- **Prompts you didn't type** (notifications, scheduled prompts) skip Jev and keep the session's model and the last effort.
+- **Subagents, `claude -p` and Agent SDK runs** are left alone (with `fork_follows_route` on, in auto a fork of the main conversation follows the session's model, except one made in a slash command's turn on the command's own model).
+- **A slash command or skill** that sets its own model or effort keeps it for its turn.
+- **Ultracode** isn't an effort level: it only lets Claude Code run workflows, so the mod routes the turn as usual and marks it `ultracode` in `/jcGearbox-log` when your prompt has the keyword (pasted text counts too, and whether workflows are on isn't checked).
+- **Jev errors or timeouts**: if Jev errors or doesn't answer within `jev_timeout_seconds` (3 s), nothing changes for that prompt and the status line says why.
+- **Waiting for Jev**: a request waits for Jev only when its answer can change it: never in shadow, nor after the first prompt once the effort is yours or the model takes none (slash commands still wait). Then only a first reply quicker than Jev waits for its answer, up to the timeout.
 
 ## Overriding it
 
@@ -99,10 +107,22 @@ Prompts you didn't type (notifications, scheduled prompts) skip Jev and keep the
 | `/model <name>` (even the model in use) or another model in the picker, after the first prompt | Stops changing the model for this session |
 | `/effort <level>` (even the level in use) or another effort in the picker, after the first prompt | Stops changing the effort for this session |
 | `/effort auto` (or `unset`) | Changes the effort again, going on from the level you last ran at (kept within `min_effort` and `max_effort`; after a number of your own, from no level in particular) |
-| Plan mode (including `opusplan`'s planning phase) | Those turns are never rewritten below the `balanced` tier (when one is set, and the API answers as it; without one, not below the model Claude Code is running), nor below a model Claude Code raised the session to for planning (Opus under `opusplan`, Sonnet on the `haiku` alias: the mod does not pull it back down). A session started on a stronger model of its own (Opus, Fable) that the mod moved down plans on the model the mod chose, so long as that is `balanced` or stronger; a pinned model that names no tier is kept. A first prompt sent in plan mode is measured from the model the session runs outside plan mode (Sonnet under `opusplan`, Haiku on the alias), not from the one raised to plan. In plan mode, `/model` naming either the model it shows or the one Claude Code plans on counts as your choice |
+| Plan mode (including `opusplan`'s planning phase) | Keeps planning turns on a strong enough model; see [Plan mode](#plan-mode) |
 | `/jcGearbox-auto` | Drops all of the above; the effort goes on from the level you last ran at, as after `/effort auto` |
 
-Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`. The same goes for picking Opus Plan Mode while its model of the moment is the one in use: type `/model opusplan`. A `/model` the engine refuses (a hook blocked it, no 1M context) counts only where its answer says so; in the terminal it answers nothing, so the mod takes it for your choice all the same (`/jcGearbox-auto` undoes that). An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
+### Plan mode
+
+- Those turns are never rewritten below the `balanced` tier (when one is set, and the API answers as it; without one, not below the model Claude Code is running), nor below a model Claude Code raised the session to for planning (Opus under `opusplan`, Sonnet on the `haiku` alias: the mod does not pull it back down).
+- A session started on a stronger model of its own (Opus, Fable) that the mod moved down plans on the model the mod chose, so long as that is `balanced` or stronger; a pinned model that names no tier is kept.
+- A first prompt sent in plan mode is measured from the model the session runs outside plan mode (Sonnet under `opusplan`, Haiku on the alias), not from the one raised to plan.
+- In plan mode, `/model` naming either the model it shows or the one Claude Code plans on counts as your choice.
+
+### What the mod can't see
+
+- Picking the session's original model again in the picker isn't a switch to Claude Code, so the mod doesn't see it and keeps its own pick: type `/model <name>`, or use `/jcGearbox-pin <model>`.
+- The same goes for picking Opus Plan Mode while its model of the moment is the one in use: type `/model opusplan`.
+- A `/model` the engine refuses (a hook blocked it, no 1M context) counts only where its answer says so; in the terminal it answers nothing, so the mod takes it for your choice all the same (`/jcGearbox-auto` undoes that).
+- An effort changed in the picker right after a resume or a plugin reload, before your next prompt, isn't noticed either: use `/effort <level>`.
 
 ## Commands
 
