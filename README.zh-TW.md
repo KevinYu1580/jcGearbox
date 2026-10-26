@@ -1,3 +1,4 @@
+<!-- 維護者：這份 README 是摘要，完整規則在 docs/README.zh-TW.md。行為或預設值改動時，四份都要更新：README.md、README.zh-TW.md、docs/README.md、docs/README.zh-TW.md。安裝指令要留在這裡：/jcGearbox-setup 會叫使用者來這裡找。 -->
 <p align="center">
   <img src="docs/assets/banner.svg" alt="jcGearbox: Right model. Right effort. Every prompt." width="100%">
 </p>
@@ -82,7 +83,7 @@ Jev 出錯或逾時（預設 3 秒）時，這個 prompt 什麼都不改。完�
 
 ## 隱私
 
-每個你送出的 prompt，TypeSafe 會收到：這次的 prompt（最多約 6000 字）、上一個 prompt（最多約 1000 字）、session 目前的 model 和上一回合的 effort，以及開啟 `send_assistant_tail` 時 Claude 上一則回答的結尾。常見的 key 與 token 格式送出前會換成 `[redacted]`，其他 secret 仍原樣送出。TypeSafe 表示不拿這些資料訓練，但沒寫明保留多久。本機紀錄存在 `~/.claude/plugins/store/jc-gearbox_*.json`，刪掉就會清空。完整說明見[隱私](docs/README.zh-TW.md#隱私)。
+每個你送出的 prompt，TypeSafe 會收到：這次的 prompt（最多約 6000 字）、上一個 prompt（最多約 1000 字）、從第二個 prompt 起 session 目前的 model 和上一回合的 effort，以及開啟 `send_assistant_tail` 時 Claude 上一則回答的結尾。常見的 key 與 token 格式送出前會換成 `[redacted]`，其他 secret 仍原樣送出。TypeSafe 表示不拿這些資料訓練，但沒寫明保留多久。本機紀錄存在 `~/.claude/plugins/store/jc-gearbox_*.json`，刪掉就會清空。完整說明見[隱私](docs/README.zh-TW.md#隱私)。
 
 ## 授權
 

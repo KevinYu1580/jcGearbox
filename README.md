@@ -1,3 +1,4 @@
+<!-- Maintainers: this README is a summary. The full rules live in docs/README.md. When behavior or a default changes, update all four: README.md, README.zh-TW.md, docs/README.md, docs/README.zh-TW.md. Keep the install commands here: /jcGearbox-setup points people to them. -->
 <p align="center">
   <img src="docs/assets/banner.svg" alt="jcGearbox: Right model. Right effort. Every prompt." width="100%">
 </p>
@@ -82,7 +83,7 @@ On Bedrock, Vertex, Foundry or a gateway, give at least two tiers full model ids
 
 ## Privacy
 
-For each prompt you send, TypeSafe receives the prompt (up to ~6000 characters), your previous prompt (up to ~1000), the session's current model and last effort, and, with `send_assistant_tail` on, the end of Claude's last reply. Common key and token shapes are replaced with `[redacted]` before sending; other secrets you paste go as they are. TypeSafe says it does not train on this data but doesn't say how long it keeps it. The local log lives in `~/.claude/plugins/store/jc-gearbox_*.json`; delete it to clear it. Full details in [Privacy](docs/README.md#privacy).
+For each prompt you send, TypeSafe receives the prompt (up to ~6000 characters), your previous prompt (up to ~1000), from the second prompt on the session's current model and last effort, and, with `send_assistant_tail` on, the end of Claude's last reply. Common key and token shapes are replaced with `[redacted]` before sending; other secrets you paste go as they are. TypeSafe says it does not train on this data but doesn't say how long it keeps it. The local log lives in `~/.claude/plugins/store/jc-gearbox_*.json`; delete it to clear it. Full details in [Privacy](docs/README.md#privacy).
 
 ## License
 
