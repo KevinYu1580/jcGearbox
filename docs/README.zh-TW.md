@@ -32,47 +32,13 @@ session 的第一個 prompt 會請 Jev 選 tier。選項把 Opus 放第一，因
 
 ### 一個 session 裡 model 怎麼變
 
-model 只在第一個 prompt 決定一次（圖 1），之後只有圖 2 這幾件事會換掉它。每個 tier 對應哪個 model，由你的設定決定。
-
-```mermaid
-flowchart TD
-    P["新 session 的第一個 prompt<br/>（用你選的 model）"] --> Q{"Jev：需要更強的 tier ≥ 0.5，<br/>或較弱的就夠 ≥ 0.8？"}
-    Q -->|"是"| O["這個 session 接下來<br/>都用該 tier 的 model"]
-    Q -->|"否，或 Jev 出錯、逾時"| S["這個 session<br/>維持你選的 model"]
-```
-
-```mermaid
-flowchart LR
-    C["第一個 prompt 之後<br/>只有這些會換 model"]
-    C -->|"/jcGearbox-pin X"| X["改用 X"]
-    C -->|"/model 換成別的 model"| U["改用那個 model，<br/>mod 不再換"]
-    C -->|"/jcGearbox-auto"| A["清掉 pin 和 /model，<br/>回到第一個 prompt 選的"]
-    C -->|"選中的 model<br/>無法使用或拒答"| S["自動退回你選的 model"]
-```
-
-圖畫的是 `auto` 模式；shadow 模式判斷方式相同，但只顯示在狀態列。
+流程圖在 [README](../README.zh-TW.md#model)。
 
 ## 怎麼選 effort
 
 等級依照官方的 [effort 文件](https://platform.claude.com/docs/zh-TW/build-with-claude/effort)。
 
-每個你送出的 prompt：
-
-```mermaid
-flowchart TD
-    P["你送出一個 prompt"] --> C{"只是接續<br/>上一件事？"}
-    C -->|"是"| K["沿用上一回合的 effort"]
-    C -->|"否"| J["用 Jev 的 effort 分數<br/>（low 到 max）；Jev 沒把握<br/>就沿用上一回合的"]
-    K --> F{"在說上次<br/>失敗了？"}
-    J --> F
-    F -->|"是"| U["升一級"]
-    F -->|"否"| R{"出錯會造成<br/>難以挽回的損害？"}
-    U --> R
-    R -->|"是"| X["至少 high"]
-    R -->|"否"| M["限制在 min_effort<br/>和 max_effort 之間"]
-    X --> M
-    M --> E(["這個 prompt 的 effort"])
-```
+流程圖在 [README](../README.zh-TW.md#effort)。完整步驟：
 
 1. 從 Jev 的 effort 分數出發（`low` 到 `max`）。如果只是接續上一件事（「好」、「繼續」、貼上輸出），沿用上一回合的 effort。Jev 對自己的分數沒把握時（信心度低於 `effort_min_confidence`，0.7），也沿用上一回合的；還沒有上一回合的 effort 時（例如 session 的第一個 prompt），就不改 effort。
 2. 你說上次失敗了，就升一級。

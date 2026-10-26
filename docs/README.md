@@ -32,47 +32,13 @@ On a session's first prompt, Jev picks a tier. Options are listed Opus first, as
 
 ### How the model changes in a session
 
-The model is decided once, at the first prompt (diagram 1); after that, only the events in diagram 2 change it. Which model each tier means is up to your settings.
-
-```mermaid
-flowchart TD
-    P["First prompt of a session<br/>(on the model you picked)"] --> Q{"Jev: 0.5 that a stronger tier<br/>is needed, or 0.8 that<br/>a weaker one will do?"}
-    Q -->|"Yes"| O["The session uses<br/>that tier's model<br/>from here on"]
-    Q -->|"No, or Jev<br/>errors / times out"| S["The session stays<br/>on your model"]
-```
-
-```mermaid
-flowchart LR
-    C["After the first prompt,<br/>only these change<br/>the model"]
-    C -->|"/jcGearbox-pin X"| X["Switch to X"]
-    C -->|"/model to another model"| U["Switch to that model;<br/>the mod stops switching"]
-    C -->|"/jcGearbox-auto"| A["Pin and /model cleared,<br/>back to the first<br/>prompt's pick"]
-    C -->|"The chosen model isn't<br/>served or declines"| S["Back to your model,<br/>automatically"]
-```
-
-The diagrams show `auto`. In shadow mode the same decision is only shown in the status line.
+The flowcharts are in the [README](../README.md#model).
 
 ## Picking the effort
 
 Levels follow Anthropic's [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort).
 
-For every prompt you type:
-
-```mermaid
-flowchart TD
-    P["You send a prompt"] --> C{"Only continuing<br/>the last task?"}
-    C -->|"Yes"| K["Keep the last effort"]
-    C -->|"No"| J["Use Jev's effort score<br/>(low to max), or the last<br/>effort if Jev isn't sure"]
-    K --> F{"Saying the last<br/>attempt failed?"}
-    J --> F
-    F -->|"Yes"| U["One level up"]
-    F -->|"No"| R{"Could a mistake do<br/>hard-to-undo damage?"}
-    U --> R
-    R -->|"Yes"| X["At least high"]
-    R -->|"No"| M["Keep it between<br/>min_effort and max_effort"]
-    X --> M
-    M --> E(["This prompt's effort"])
-```
+The flowchart is in the [README](../README.md#effort). In full:
 
 1. Start from Jev's effort score (`low` to `max`). If the prompt only continues the last task ("ok", "go on", pasted output), keep the last effort. If Jev isn't sure of its score (confidence below `effort_min_confidence`, 0.7), keep the last effort too, and with none yet (on a session's first prompt, say) leave the effort as it is.
 2. If you say the last attempt failed, go up one level.
