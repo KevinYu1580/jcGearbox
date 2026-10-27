@@ -8,12 +8,12 @@ export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 const PROMPT_CHARS = 6000
 
 const TIER_CRITERIA: Record<Tier, string> = {
-  low: 'Lowest latency and price: real-time or high-volume work, cost-sensitive tasks and sub-agent style tasks, such as a lookup, an explanation, a rename, formatting, running a command or a one-line edit',
+  low: 'Lowest latency and price: real-time applications, high-volume intelligent processing, cost-sensitive deployments that need strong reasoning, and sub-agent tasks',
   balanced:
-    'Speed and capability for everyday coding, agents and enterprise work: code generation, data analysis, content creation, visual understanding and agentic tool use, such as a typical feature or bug fix within one module, writing tests or a single-file refactor',
+    'Speed and capability for everyday coding, agents and enterprise workloads: code generation, data analysis, content creation, visual understanding and agentic tool use',
   strong:
-    'Complex agentic coding and enterprise work: autonomous coding agents running for hours, large-scale refactoring, complex systems engineering, vision-heavy workflows and computer use, such as cross-module design, hard debugging (concurrency, performance, memory), architecture or security decisions',
-  long: 'The highest capability available: agent sessions that run for hours, multistep deep research, and analysis carried through to a finished document, spreadsheet or deck',
+    'Complex agentic coding and enterprise work: autonomous coding agents running for hours, large-scale refactoring, complex systems engineering, vision-heavy workflows and computer use',
+  long: 'The highest capability available: agent sessions that run for hours and multistep deep research',
 }
 
 const ASK_ORDER: readonly Tier[] = ['strong', 'balanced', 'low', 'long']
